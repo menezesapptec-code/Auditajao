@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Controle de Serviço</title>
-<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Controle%20de%20Servi%C3%A7o%22,%22short_name%22:%22Controle%22,%22display%22:%22standalone%22,%22start_url%22:%22.%22,%22background_color%22:%22%23111827%22,%22theme_color%22:%22%23166534%22}">
+<title>Controle de Serviço — Jaó</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -14,29 +13,36 @@
 <style>
 :root{
   --verde:#166534; --verde-claro:#16a34a; --verde-bg:#f0fdf4;
-  --vermelho:#dc2626; --amarelo:#ca8a04; --cinza:#6b7280; --cinza-claro:#f3f4f6;
+  --vermelho:#dc2626; --amarelo:#ca8a04; --azul:#1d4ed8; --cinza:#6b7280; --cinza-claro:#f3f4f6;
   --borda:#e5e7eb; --texto:#111827;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--cinza-claro);color:var(--texto);padding-bottom:70px;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--cinza-claro);color:var(--texto);padding-bottom:74px;}
 .hidden{display:none !important;}
 header.topbar{background:var(--verde);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:20;}
-header.topbar h1{font-size:17px;font-weight:600;}
+header.topbar h1{font-size:16px;font-weight:600;}
+header.topbar .who{font-size:11px;opacity:.85;}
 header.topbar .status{font-size:11px;padding:3px 8px;border-radius:10px;background:rgba(255,255,255,.2);}
 header.topbar .status.offline{background:var(--vermelho);}
-.container{max-width:900px;margin:0 auto;padding:14px;}
+header.topbar button.sair{background:transparent;color:#fff;font-size:12px;border:1px solid rgba(255,255,255,.5);padding:5px 10px;border-radius:6px;}
+.container{max-width:960px;margin:0 auto;padding:14px;}
 .card{background:#fff;border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.08);}
 .card h2{font-size:15px;margin-bottom:12px;color:var(--verde);}
+.card p.sub{font-size:12.5px;color:var(--cinza);margin:-8px 0 12px;}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;}
 label{display:block;font-size:12px;color:var(--cinza);margin-bottom:4px;font-weight:600;}
-input,select{width:100%;padding:9px 10px;border:1px solid var(--borda);border-radius:8px;font-size:15px;background:#fff;}
-input:focus,select:focus{outline:2px solid var(--verde-claro);border-color:var(--verde-claro);}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--borda);border-radius:8px;font-size:15px;background:#fff;font-family:inherit;}
+textarea{resize:vertical;min-height:60px;}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--verde-claro);border-color:var(--verde-claro);}
 button{cursor:pointer;border:none;border-radius:8px;font-weight:600;font-size:14px;}
 .btn-primary{background:var(--verde);color:#fff;padding:12px 18px;}
 .btn-primary:active{background:var(--verde-claro);}
 .btn-secondary{background:#fff;color:var(--verde);border:1px solid var(--verde);padding:10px 16px;}
 .btn-danger{background:var(--vermelho);color:#fff;padding:8px 10px;}
 .btn-block{width:100%;}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+.sub-tab{flex:1;min-width:90px;}
+.sub-tab.active{background:var(--verde);color:#fff;border-color:var(--verde);}
 .counters{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
 @media(min-width:520px){.counters{grid-template-columns:repeat(4,1fr);}}
 .counter-box{background:var(--verde-bg);border:1px solid #bbf7d0;border-radius:10px;padding:10px;text-align:center;}
@@ -54,6 +60,8 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 .badge.recria{background:#fef9c3;color:#a16207;}
 .badge.refugo{background:#fee2e2;color:#b91c1c;}
 .badge.outro{background:#e5e7eb;color:#374151;}
+.badge.pendente{background:#fef3c7;color:#92400e;}
+.badge.conferido{background:#dcfce7;color:#166534;}
 .export-bar{display:flex;gap:10px;flex-wrap:wrap;}
 .export-bar button{flex:1;min-width:130px;}
 .pending{font-size:11px;color:var(--amarelo);margin-top:6px;}
@@ -64,16 +72,63 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 .list-item{display:flex;justify-content:space-between;align-items:center;padding:12px;border:1px solid var(--borda);border-radius:8px;margin-bottom:8px;}
 .list-item:active{background:var(--cinza-claro);}
 .list-item .meta{font-size:12px;color:var(--cinza);}
-.fab-add{position:fixed;bottom:16px;right:16px;left:16px;max-width:900px;margin:0 auto;z-index:15;}
+.fab-add{position:fixed;bottom:60px;right:16px;left:16px;max-width:960px;margin:0 auto;z-index:15;}
+.nav-tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid var(--borda);z-index:20;}
+.nav-tabs button{flex:1;background:none;padding:9px 4px;font-size:11px;color:var(--cinza);font-weight:600;border-radius:0;}
+.nav-tabs button.active{color:var(--verde);}
+.check-row{display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--borda);font-size:13px;}
+.check-row input[type=checkbox]{width:18px;height:18px;flex:none;}
+.stat-mini{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px dashed var(--borda);}
+.bar-row{margin-bottom:8px;}
+.bar-row .bar-lbl{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;}
+.bar-track{background:var(--cinza-claro);border-radius:6px;height:10px;overflow:hidden;}
+.bar-fill{background:var(--verde-claro);height:100%;}
+.aud-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--borda);gap:8px;flex-wrap:wrap;}
+.aud-name{font-weight:600;font-size:14px;}
+.aud-email{font-size:12px;color:var(--cinza);}
+.aud-status{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;}
+.aud-status.ativo{background:#dcfce7;color:#166534;}
+.aud-status.bloqueado{background:#fee2e2;color:#b91c1c;}
+.feed-item{font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--borda);}
+.danger-box{border:1px solid var(--vermelho);border-radius:10px;margin-top:10px;padding:14px;}
+.danger-box p{font-size:12.5px;color:var(--cinza);margin-bottom:10px;}
+
+/* ---- assistente por etapas (lançamento de animal) ---- */
+.wiz-progress{display:flex;gap:5px;margin:2px 0 18px;flex-wrap:wrap;}
+.wiz-dot{width:15px;height:11px;border-radius:3px;background:var(--borda);}
+.wiz-dot.done{background:var(--verde-claro);}
+.wiz-dot.current{background:var(--verde);}
+.wiz-steplbl{font-size:12px;color:var(--cinza);font-weight:600;margin:-10px 0 14px;}
+.opt-grid{display:flex;flex-direction:column;gap:10px;margin-bottom:4px;}
+.opt-card{background:#fff;border:2px solid var(--borda);border-radius:10px;padding:14px 16px;font-size:15.5px;font-weight:600;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
+.opt-card.sel{border-color:var(--verde);background:var(--verde-bg);color:var(--verde);}
+.locked-num{font-size:15px;font-weight:700;text-align:center;background:var(--verde-bg);border:2px dashed #bbf7d0;border-radius:10px;padding:16px;color:var(--verde);margin-bottom:16px;}
+.locked-num .big{display:block;font-size:36px;margin-top:2px;}
+.big-input{font-size:30px;font-weight:700;text-align:center;padding:16px 12px;}
+.chip-row{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px;}
+.chip{background:#fff;border:1px solid var(--borda);border-radius:16px;padding:7px 13px;font-size:12.5px;font-weight:600;color:var(--cinza);cursor:pointer;}
+.chip:active{background:var(--cinza-claro);}
+.wiz-bottom{display:flex;gap:8px;margin-top:18px;}
+.wiz-bottom button{flex:1;padding:13px;font-size:14.5px;}
+.err-banner{background:#fee2e2;border:2px solid var(--vermelho);color:#991b1b;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;font-weight:700;}
+.rev-row{display:flex;justify-content:space-between;align-items:center;padding:11px 12px;border-bottom:1px solid var(--borda);font-size:14px;cursor:pointer;}
+.rev-row:last-child{border-bottom:none;}
+.rev-row .k{color:var(--cinza);font-weight:600;}
+.rev-row .v{font-weight:700;}
+.rev-row .v .edit{color:var(--verde);font-weight:600;font-size:12px;margin-left:6px;}
+.rev-card{border:1px solid var(--borda);border-radius:10px;overflow:hidden;margin-bottom:6px;}
 </style>
 </head>
 <body>
 
 <header class="topbar">
-  <h1 id="topTitle">Controle de Serviço</h1>
+  <div>
+    <h1 id="topTitle">Controle de Serviço</h1>
+    <div class="who" id="whoLbl"></div>
+  </div>
   <div style="display:flex;align-items:center;gap:8px;">
     <span class="status" id="syncStatus">Online</span>
-    <button id="btnLogout" class="hidden" style="background:transparent;color:#fff;font-size:12px;">Sair</button>
+    <button class="sair hidden" id="btnLogout">Sair</button>
   </div>
 </header>
 
@@ -85,10 +140,11 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <input type="password" id="loginSenha" placeholder="Senha">
     <button class="btn-primary btn-block" id="btnLogin">Entrar</button>
     <div class="error-msg hidden" id="loginErro"></div>
+    <p style="font-size:11.5px;color:var(--cinza);margin-top:12px;">Novos acessos de auditor são criados pelo administrador no Painel Admin.</p>
   </div>
 </div>
 
-<!-- LISTA DE SERVIÇOS -->
+<!-- ==================== AUDITOR: LISTA DE CONTROLES ==================== -->
 <div id="viewLista" class="container hidden">
   <div class="card">
     <h2>Controles de Serviço</h2>
@@ -100,7 +156,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   </div>
 </div>
 
-<!-- DETALHE DO SERVIÇO -->
+<!-- ==================== AUDITOR: DETALHE / LANÇAMENTO ==================== -->
 <div id="viewServico" class="container hidden">
   <div class="card">
     <h2>Dados do Controle</h2>
@@ -122,7 +178,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
       <div class="counter-box"><div class="num" id="cTotal">0</div><div class="lbl">Total de Animais</div></div>
       <div class="counter-box"><div class="num" id="cArrobas">0</div><div class="lbl">Total @ (Carimbo)</div></div>
       <div class="counter-box"><div class="num" id="cAnimaisHora">0</div><div class="lbl">Animais/Hora</div></div>
-      <div class="counter-box"><div class="num" id="cDiferenca">0</div><div class="lbl">Diferença</div></div>
+      <div class="counter-box"><div class="num" id="cPendentes">0</div><div class="lbl">Aguard. Soltar</div></div>
       <div class="counter-box"><div class="num" id="cConf">0</div><div class="lbl">Confinamento</div></div>
       <div class="counter-box"><div class="num" id="cRecria">0</div><div class="lbl">Recria</div></div>
       <div class="counter-box"><div class="num" id="cRefugo">0</div><div class="lbl">Refugo</div></div>
@@ -131,42 +187,24 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   </div>
 
   <div class="card">
-    <h2>Adicionar Animal</h2>
-    <div class="entry-form">
-      <div><label>Raça</label>
-        <select id="eRaca">
-          <option>Nelore</option><option>Cruzado</option><option>Angus</option>
-          <option>Girolando</option><option>Outro</option>
-        </select>
-      </div>
-      <div><label>Origem</label><input id="eOrigem" placeholder="Ex: Pasto 3" list="origensList"><datalist id="origensList"></datalist></div>
-      <div><label>Destino</label>
-        <select id="eDestino">
-          <option value="Confinamento">Confinamento</option>
-          <option value="Recria">Recria</option>
-          <option value="Refugo">Refugo</option>
-          <option value="Sequestro">Sequestro</option>
-          <option value="Outro">Outro</option>
-        </select>
-      </div>
-      <div><label>Carimbo (@)</label><input type="number" step="0.1" id="eCarimbo" placeholder="Ex: 10" inputmode="decimal"></div>
-      <div class="full"><label>Obs.</label><input id="eObs" placeholder="Opcional"></div>
-    </div>
-    <button class="btn-primary btn-block" id="btnAddAnimal" style="padding:14px;font-size:15px;">+ Adicionar (Ord. <span id="proxOrd">1</span>)</button>
+    <h2>Lançar animal</h2>
+    <p class="sub">Passa pelas etapas (Raça, Origem, Destino, Carimbo, Obs) e entra como <strong>pendente</strong> — some pra "Conferência" pra selecionar o lote e soltar.</p>
+    <datalist id="origensList"></datalist>
+    <button class="btn-primary btn-block" id="btnAbrirWizardAnimal" style="padding:16px;font-size:16px;">+ Adicionar Animal (Ord. <span id="proxOrd">1</span>)</button>
   </div>
 
   <div class="card">
-    <h2>Lançamentos</h2>
+    <h2>Lançamentos deste controle</h2>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Ord.</th><th>Raça</th><th>Origem</th><th>Destino</th><th>@ Carimbo</th><th>Obs.</th><th></th></tr></thead>
+        <thead><tr><th>Ord.</th><th>Raça</th><th>Origem</th><th>Destino</th><th>@</th><th>Status</th><th>Obs.</th><th></th></tr></thead>
         <tbody id="tabelaAnimais"></tbody>
       </table>
     </div>
   </div>
 
   <div class="card">
-    <h2>Exportar</h2>
+    <h2>Exportar este controle</h2>
     <div class="export-bar">
       <button class="btn-secondary" id="btnExportExcel">Exportar Excel</button>
       <button class="btn-secondary" id="btnExportPDF">Exportar PDF</button>
@@ -174,15 +212,181 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <p class="pending" id="pendingMsg"></p>
   </div>
 
-  <div class="fab-add">
-    <button class="btn-secondary btn-block" id="btnVoltarLista" style="background:#fff;padding:12px;">← Voltar para a lista</button>
+  <div class="fab-add" style="bottom:74px;">
+    <button class="btn-secondary btn-block" id="btnVoltarLista" style="background:#fff;padding:10px;">← Voltar para a lista</button>
+  </div>
+</div>
+
+<!-- ==================== AUDITOR: ASSISTENTE DE LANÇAMENTO (ETAPAS) ==================== -->
+<div id="viewWizardAnimal" class="container hidden">
+  <div class="card">
+    <div class="wiz-progress" id="wizProgress"></div>
+    <div id="wizStepContent"></div>
+    <div class="wiz-bottom">
+      <button class="btn-secondary" id="btnWizBack">Cancelar</button>
+      <button class="btn-primary" id="btnWizNext">Confirmar e avançar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== AUDITOR: CONFERÊNCIA (SOLTAR REBANHO) ==================== -->
+<div id="viewConferencia" class="container hidden">
+  <div class="card">
+    <div class="btn-row" style="margin-bottom:4px;">
+      <button class="btn-secondary sub-tab active" id="ctab-pendentes">Pendentes</button>
+      <button class="btn-secondary sub-tab" id="ctab-conferidos">Conferidos</button>
+    </div>
+  </div>
+
+  <div id="confPendentesView">
+    <div class="card">
+      <h2>Selecione o lote a soltar</h2>
+      <p class="sub">Marque os animais que vão neste lote (o curral pode encher parcial — o resto fica pendente pra próxima soltura).</p>
+      <div class="btn-row" style="margin-bottom:10px;">
+        <button class="btn-secondary" id="btnSelectAllPend">Selecionar todos</button>
+        <button class="btn-secondary" id="btnClearPend">Limpar seleção</button>
+      </div>
+      <div class="table-wrap" style="max-height:320px;">
+        <div id="pendChecklist"></div>
+      </div>
+      <div class="counter-box" style="margin:14px 0;"><div class="num" id="cSelecionados">0</div><div class="lbl">Selecionados pra este lote</div></div>
+      <div class="grid">
+        <div><label>Conferente 1</label><input id="inConf1" placeholder="Nome"></div>
+        <div><label>Conferente 2</label><input id="inConf2" placeholder="Nome"></div>
+      </div>
+      <button class="btn-primary btn-block" id="btnConfirmarLote" style="margin-top:12px;padding:14px;">✅ Confirmar e soltar</button>
+    </div>
+  </div>
+
+  <div id="confConferidosView" class="hidden">
+    <div class="card">
+      <h2>Animais já soltos</h2>
+      <p class="sub">Toque em um animal pra editar só o destino.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ord.</th><th>Raça</th><th>Destino</th><th>@</th><th>Lote</th></tr></thead>
+          <tbody id="tabelaConferidos"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ADMIN ==================== -->
+<div id="viewAdmin" class="container hidden">
+  <div class="card">
+    <div class="btn-row" style="margin-bottom:4px;">
+      <button class="btn-secondary sub-tab active" id="atab-visao">Visão geral</button>
+      <button class="btn-secondary sub-tab" id="atab-auditores">Auditores</button>
+    </div>
+  </div>
+
+  <div id="adminVisaoView">
+    <div class="card">
+      <div class="export-bar" style="margin-bottom:14px;">
+        <button class="btn-secondary" id="btnAdminExportExcel">⬇ Excel (tudo)</button>
+        <button class="btn-secondary" id="btnAdminExportPDF">⬇ PDF (tudo)</button>
+      </div>
+      <div class="counters">
+        <div class="counter-box"><div class="num" id="aTotal">0</div><div class="lbl">Total lançado</div></div>
+        <div class="counter-box"><div class="num" id="aPendente">0</div><div class="lbl">Aguard. soltura</div></div>
+        <div class="counter-box"><div class="num" id="aArrobas">0</div><div class="lbl">Total @</div></div>
+        <div class="counter-box"><div class="num" id="aLotes">0</div><div class="lbl">Lotes soltos</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Por destino</h2>
+      <div id="barDestino"></div>
+    </div>
+    <div class="card">
+      <h2>Por raça</h2>
+      <div id="barRaca"></div>
+    </div>
+
+    <div class="card">
+      <h2>Atividade em tempo real</h2>
+      <div id="adminFeed"></div>
+    </div>
+
+    <div class="card">
+      <h2>✏ Editar lançamento</h2>
+      <p class="sub">Corrige um registro direto por aqui, mesmo já conferido.</p>
+      <input id="adminEditSearch" placeholder="Buscar por Nº do controle ou Ord...">
+      <div id="adminEditResults" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <div id="adminAuditoresView" class="hidden">
+    <div class="card">
+      <h2>Cadastrar novo auditor</h2>
+      <div class="grid">
+        <div><label>Nome</label><input id="audNome" placeholder="Nome do auditor"></div>
+        <div><label>E-mail</label><input type="email" id="audEmail" placeholder="email@exemplo.com"></div>
+        <div><label>Senha</label><input id="audSenha" placeholder="Mínimo 6 caracteres"></div>
+      </div>
+      <button class="btn-primary btn-block" id="btnAddAuditor" style="margin-top:10px;">+ Cadastrar auditor</button>
+    </div>
+    <div class="card">
+      <h2>Auditores cadastrados</h2>
+      <div id="auditoresList"></div>
+    </div>
+  </div>
+
+  <div class="fab-add" style="bottom:16px;position:static;margin-top:0;"></div>
+</div>
+
+<!-- NAV AUDITOR -->
+<div class="nav-tabs hidden" id="navAuditor">
+  <button data-target="lista" class="active"><div>📋</div>Controles</button>
+  <button data-target="conferencia"><div>✅</div>Conferência</button>
+</div>
+<!-- NAV ADMIN (sem barra inferior — painel único) -->
+
+<!-- MODAL: EDITAR DESTINO (conferido) -->
+<div id="modalEditDestino" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div class="card" style="max-width:400px;width:100%;">
+    <h2>Editar destino</h2>
+    <p class="sub" id="medAnimalLbl">—</p>
+    <label>Destino</label>
+    <select id="medDestino">
+      <option value="Confinamento">Confinamento</option>
+      <option value="Recria">Recria</option>
+      <option value="Refugo">Refugo</option>
+      <option value="Sequestro">Sequestro</option>
+      <option value="Outro">Outro</option>
+    </select>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn-secondary" id="medCancel">Cancelar</button>
+      <button class="btn-primary" id="medSave">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EDITAR LANÇAMENTO (admin) -->
+<div id="modalAdminEdit" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div class="card" style="max-width:420px;width:100%;">
+    <h2>Editar lançamento</h2>
+    <div class="grid">
+      <div><label>Raça</label>
+        <select id="aeRaca"><option>Nelore</option><option>Cruzado</option><option>Angus</option><option>Girolando</option><option>Outro</option></select>
+      </div>
+      <div><label>Origem</label><input id="aeOrigem"></div>
+      <div><label>Destino</label>
+        <select id="aeDestino"><option value="Confinamento">Confinamento</option><option value="Recria">Recria</option><option value="Refugo">Refugo</option><option value="Sequestro">Sequestro</option><option value="Outro">Outro</option></select>
+      </div>
+      <div><label>Carimbo (@)</label><input type="number" step="0.1" id="aeCarimbo"></div>
+      <div class="full"><label>Obs.</label><input id="aeObs"></div>
+    </div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn-secondary" id="aeCancel">Cancelar</button>
+      <button class="btn-primary" id="aeSave">Salvar</button>
+    </div>
   </div>
 </div>
 
 <script>
-/* ================= CONFIGURAÇÃO FIREBASE =================
-   Substitua pelos dados do SEU projeto Firebase
-   (Console Firebase > Configurações do Projeto > Seus apps > SDK setup) */
+/* ================= CONFIGURAÇÃO FIREBASE ================= */
 const firebaseConfig = {
   apiKey: "AIzaSyBiIVeBnzD_1mjvr6pwiBWUj91Jz9a5C9w",
   authDomain: "auditajao.firebaseapp.com",
@@ -196,56 +400,61 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
 
+// app secundário — só pra criar contas de auditor sem deslogar o admin
+const secondaryApp = firebase.initializeApp(firebaseConfig, "Secondary");
+const secondaryAuth = secondaryApp.auth();
+
+const ADMIN_EMAIL = "menezesapptec@gmail.com";
+
 /* ================= ESTADO ================= */
-let servicoAtual = null;     // documento do serviço aberto
-let animaisAtual = [];       // lançamentos do serviço aberto (cache local)
-let servicosCache = [];      // lista de serviços do usuário
-let filaOffline = [];        // operações pendentes de sync
+let currentUser = null, isAdmin = false, currentAuditorNome = "";
+let servicoAtual = null;
+let animaisAtual = [];       // lançamentos do controle aberto (cache local)
+let servicosCache = [];      // lista de controles do usuário
+let filaOffline = [];
+let adminFeedUnsub = null;
 const FILA_KEY = "cs_fila_offline";
 const CACHE_KEY = "cs_servicos_cache";
 
-/* ================= HELPERS ================= */
 const $ = id => document.getElementById(id);
-function show(view){
-  ["viewLogin","viewLista","viewServico"].forEach(v=>$(v).classList.add("hidden"));
-  $(view).classList.remove("hidden");
-}
 function uid(){ return 'l' + Date.now() + Math.random().toString(36).slice(2,8); }
 function salvarFilaLocal(){ localStorage.setItem(FILA_KEY, JSON.stringify(filaOffline)); }
 function carregarFilaLocal(){ filaOffline = JSON.parse(localStorage.getItem(FILA_KEY) || "[]"); }
 function salvarCacheServicos(){ localStorage.setItem(CACHE_KEY, JSON.stringify(servicosCache)); }
 function carregarCacheServicos(){ servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]"); }
 
+function showView(view){
+  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewAdmin"].forEach(v=>$(v).classList.add("hidden"));
+  $(view).classList.remove("hidden");
+  $("navAuditor").classList.toggle("hidden", isAdmin || view==="viewLogin" || view==="viewWizardAnimal");
+}
+function setNavActive(target){
+  document.querySelectorAll("#navAuditor button").forEach(b=> b.classList.toggle("active", b.dataset.target===target));
+}
+
 function atualizarStatusSync(){
   const el = $("syncStatus");
   if(!navigator.onLine){ el.textContent = "Offline"; el.classList.add("offline"); }
   else if(filaOffline.length>0){ el.textContent = `Sincronizando (${filaOffline.length})`; el.classList.add("offline"); }
   else { el.textContent = "Online"; el.classList.remove("offline"); }
-  $("pendingMsg").textContent = filaOffline.length>0
-    ? `${filaOffline.length} lançamento(s) aguardando conexão para sincronizar.` : "";
+  const pm = $("pendingMsg");
+  if(pm) pm.textContent = filaOffline.length>0 ? `${filaOffline.length} lançamento(s) aguardando conexão para sincronizar.` : "";
 }
-window.addEventListener("online", ()=>{ processarFila(); });
+window.addEventListener("online", processarFila);
 window.addEventListener("offline", atualizarStatusSync);
 
-/* ================= FILA OFFLINE (SYNC) =================
-   Cada item: {tipo:'novoServico'|'novoAnimal'|'updServico'|'delAnimal', ...} */
+/* ================= FILA OFFLINE ================= */
 async function processarFila(){
   if(!navigator.onLine || filaOffline.length===0){ atualizarStatusSync(); return; }
   const pendentes = [...filaOffline];
   for(const op of pendentes){
     try{
-      if(op.tipo === "novoServico"){
-        await db.collection("servicos").doc(op.id).set(op.dados, {merge:true});
-      } else if(op.tipo === "updServico"){
-        await db.collection("servicos").doc(op.id).set(op.dados, {merge:true});
-      } else if(op.tipo === "novoAnimal"){
-        await db.collection("servicos").doc(op.servicoId)
-          .collection("animais").doc(op.id).set(op.dados, {merge:true});
-      } else if(op.tipo === "delAnimal"){
-        await db.collection("servicos").doc(op.servicoId)
-          .collection("animais").doc(op.id).delete();
+      if(op.tipo==="novoServico" || op.tipo==="updServico"){
+        await db.collection("controles").doc(op.id).set(op.dados, {merge:true});
+      } else if(op.tipo==="novoAnimal" || op.tipo==="updAnimal"){
+        await db.collection("animais").doc(op.id).set(op.dados, {merge:true});
       }
-      filaOffline = filaOffline.filter(f => f !== op);
+      filaOffline = filaOffline.filter(f=>f!==op);
       salvarFilaLocal();
     }catch(e){ console.error("Erro ao sincronizar:", e); break; }
   }
@@ -256,37 +465,61 @@ setInterval(processarFila, 15000);
 /* ================= AUTENTICAÇÃO ================= */
 $("btnLogin").onclick = async ()=>{
   $("loginErro").classList.add("hidden");
-  try{
-    await auth.signInWithEmailAndPassword($("loginEmail").value.trim(), $("loginSenha").value);
-  }catch(e){
-    $("loginErro").textContent = "E-mail ou senha inválidos.";
-    $("loginErro").classList.remove("hidden");
-  }
+  try{ await auth.signInWithEmailAndPassword($("loginEmail").value.trim(), $("loginSenha").value); }
+  catch(e){ $("loginErro").textContent = "E-mail ou senha inválidos."; $("loginErro").classList.remove("hidden"); }
 };
-$("btnLogout").onclick = ()=> auth.signOut();
+$("btnLogout").onclick = ()=>{ if(adminFeedUnsub) adminFeedUnsub(); auth.signOut(); };
 
-auth.onAuthStateChanged(user=>{
+auth.onAuthStateChanged(async (user)=>{
   if(user){
+    currentUser = user;
+    if(user.email && user.email.toLowerCase()===ADMIN_EMAIL){
+      isAdmin = true;
+      $("btnLogout").classList.remove("hidden");
+      $("whoLbl").textContent = "Administrador";
+      abrirAdmin();
+      return;
+    }
+    // checa se é auditor ativo
+    isAdmin = false;
+    let liberado = false;
+    try{
+      const doc = await db.collection("auditores").doc(user.uid).get();
+      liberado = doc.exists && doc.data().ativo === true;
+      if(liberado) currentAuditorNome = doc.data().nome || "";
+    }catch(e){ console.error(e); liberado = !navigator.onLine; } // offline: deixa entrar com cache local
+    if(!liberado){
+      $("loginErro").textContent = "Acesso bloqueado. Fale com o administrador.";
+      $("loginErro").classList.remove("hidden");
+      await auth.signOut();
+      return;
+    }
     $("btnLogout").classList.remove("hidden");
-    carregarFilaLocal();
-    carregarCacheServicos();
-    atualizarStatusSync();
+    $("whoLbl").textContent = currentAuditorNome ? `Auditor: ${currentAuditorNome}` : user.email;
+    carregarFilaLocal(); carregarCacheServicos(); atualizarStatusSync();
     abrirLista();
     processarFila();
   } else {
-    show("viewLogin");
+    showView("viewLogin");
     $("btnLogout").classList.add("hidden");
+    $("whoLbl").textContent = "";
   }
 });
 
-/* ================= LISTA DE SERVIÇOS ================= */
+/* ================= NAV AUDITOR ================= */
+$("[data-target='lista']");
+document.querySelectorAll("#navAuditor button").forEach(b=>{
+  b.onclick = ()=>{ setNavActive(b.dataset.target); b.dataset.target==="lista" ? abrirLista() : abrirConferencia(); };
+});
+
+/* ================= LISTA DE CONTROLES ================= */
 async function abrirLista(){
-  show("viewLista");
+  showView("viewLista"); setNavActive("lista");
   $("topTitle").textContent = "Controles de Serviço";
-  renderLista(servicosCache); // mostra cache imediatamente (funciona offline)
+  renderLista(servicosCache);
   if(navigator.onLine){
     try{
-      const snap = await db.collection("servicos").orderBy("criadoEm","desc").limit(100).get();
+      const snap = await db.collection("controles").where("criadoPor","==",currentUser.uid).orderBy("criadoEmLocal","desc").limit(100).get();
       servicosCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
       salvarCacheServicos();
       renderLista(servicosCache);
@@ -294,229 +527,347 @@ async function abrirLista(){
   }
 }
 function renderLista(lista){
-  const el = $("listaServicos");
-  el.innerHTML = "";
+  const el = $("listaServicos"); el.innerHTML = "";
   $("listaVazia").classList.toggle("hidden", lista.length>0);
   lista.forEach(s=>{
     const div = document.createElement("div");
     div.className = "list-item";
     div.innerHTML = `<div>
-        <div style="font-weight:600;">Nº ${s.numero || "-"} — ${s.data || ""}</div>
-        <div class="meta">Vet: ${s.vetResponsavel || "-"} · ${s.totalAnimais||0} animais</div>
+        <div style="font-weight:600;">Nº ${s.numero||"-"} — ${s.data||""}</div>
+        <div class="meta">Vet: ${s.vetResponsavel||"-"} · ${s.totalAnimais||0} animais</div>
       </div><div>›</div>`;
     div.onclick = ()=> abrirServico(s.id);
     el.appendChild(div);
   });
 }
-
-$("btnNovoServico").onclick = async ()=>{
+$("btnNovoServico").onclick = ()=>{
   const id = uid();
   const dados = {
-    numero: "", data: new Date().toISOString().slice(0,10),
-    vetResponsavel: "", responsavel: "",
-    horaInicio: "", intervalo: "", retorno: "", horaTermino: "",
-    totalAnimais: 0, totalArrobas: 0,
-    criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
-    criadoEmLocal: Date.now()
+    numero:"", data:new Date().toISOString().slice(0,10),
+    vetResponsavel:"", responsavel:"",
+    horaInicio:"", intervalo:"", retorno:"", horaTermino:"",
+    totalAnimais:0, totalArrobas:0,
+    criadoPor: currentUser.uid, criadoPorNome: currentAuditorNome || currentUser.email,
+    criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoEmLocal: Date.now()
   };
   servicosCache.unshift({id, ...dados, criadoEm:null});
   salvarCacheServicos();
-  filaOffline.push({tipo:"novoServico", id, dados:{...dados, criadoEm: firebase.firestore.FieldValue.serverTimestamp()}});
-  salvarFilaLocal();
-  processarFila();
+  filaOffline.push({tipo:"novoServico", id, dados});
+  salvarFilaLocal(); processarFila();
   abrirServico(id, true);
 };
-
 $("btnVoltarLista").onclick = abrirLista;
 
-/* ================= DETALHE DO SERVIÇO ================= */
+/* ================= DETALHE / LANÇAMENTO ================= */
 async function abrirServico(id, novo=false){
-  show("viewServico");
-  $("topTitle").textContent = "Controle de Serviço";
+  showView("viewServico"); setNavActive("lista");
+  $("topTitle").textContent = "Lançamento";
   servicoAtual = servicosCache.find(s=>s.id===id) || {id};
   preencherFormServico(servicoAtual);
-
   animaisAtual = JSON.parse(localStorage.getItem("animais_"+id) || "[]");
   renderTabela();
-
   if(!novo && navigator.onLine){
     try{
-      const doc = await db.collection("servicos").doc(id).get();
+      const doc = await db.collection("controles").doc(id).get();
       if(doc.exists){ servicoAtual = {id, ...doc.data()}; preencherFormServico(servicoAtual); }
-      const snap = await db.collection("servicos").doc(id).collection("animais").orderBy("ord").get();
+      const snap = await db.collection("animais").where("controleId","==",id).orderBy("ord").get();
       animaisAtual = snap.docs.map(d=>({id:d.id, ...d.data()}));
       localStorage.setItem("animais_"+id, JSON.stringify(animaisAtual));
       renderTabela();
     }catch(e){ console.error(e); }
   }
-  // popular datalist de origens frequentes
   const origens = [...new Set(animaisAtual.map(a=>a.origem).filter(Boolean))];
   $("origensList").innerHTML = origens.map(o=>`<option value="${o}">`).join("");
 }
-
 function preencherFormServico(s){
-  $("fNumero").value = s.numero || "";
-  $("fData").value = s.data || "";
-  $("fVet").value = s.vetResponsavel || "";
-  $("fResponsavel").value = s.responsavel || "";
-  $("fHoraInicio").value = s.horaInicio || "";
-  $("fIntervalo").value = s.intervalo || "";
-  $("fRetorno").value = s.retorno || "";
-  $("fHoraTermino").value = s.horaTermino || "";
+  $("fNumero").value=s.numero||""; $("fData").value=s.data||"";
+  $("fVet").value=s.vetResponsavel||""; $("fResponsavel").value=s.responsavel||"";
+  $("fHoraInicio").value=s.horaInicio||""; $("fIntervalo").value=s.intervalo||"";
+  $("fRetorno").value=s.retorno||""; $("fHoraTermino").value=s.horaTermino||"";
 }
-
-["fNumero","fData","fVet","fResponsavel","fHoraInicio","fIntervalo","fRetorno","fHoraTermino"].forEach(campo=>{
-  $(campo).addEventListener("change", salvarCabecalho);
-});
+["fNumero","fData","fVet","fResponsavel","fHoraInicio","fIntervalo","fRetorno","fHoraTermino"].forEach(c=> $(c).addEventListener("change", salvarCabecalho));
 function salvarCabecalho(){
   if(!servicoAtual) return;
   const dados = {
-    numero: $("fNumero").value, data: $("fData").value,
-    vetResponsavel: $("fVet").value, responsavel: $("fResponsavel").value,
-    horaInicio: $("fHoraInicio").value, intervalo: $("fIntervalo").value,
-    retorno: $("fRetorno").value, horaTermino: $("fHoraTermino").value
+    numero:$("fNumero").value, data:$("fData").value,
+    vetResponsavel:$("fVet").value, responsavel:$("fResponsavel").value,
+    horaInicio:$("fHoraInicio").value, intervalo:$("fIntervalo").value,
+    retorno:$("fRetorno").value, horaTermino:$("fHoraTermino").value
   };
   Object.assign(servicoAtual, dados);
   const idx = servicosCache.findIndex(s=>s.id===servicoAtual.id);
   if(idx>=0) Object.assign(servicosCache[idx], dados);
   salvarCacheServicos();
-  filaOffline.push({tipo:"updServico", id: servicoAtual.id, dados});
-  salvarFilaLocal();
-  processarFila();
+  filaOffline.push({tipo:"updServico", id:servicoAtual.id, dados});
+  salvarFilaLocal(); processarFila();
   calcularResumo();
 }
 
-/* ================= LANÇAMENTO DE ANIMAIS ================= */
-$("btnAddAnimal").onclick = ()=>{
-  const carimbo = parseFloat($("eCarimbo").value);
-  if(!carimbo || carimbo<=0){ alert("Informe o valor do Carimbo (@)."); return; }
-  const ord = animaisAtual.length + 1;
+/* ================= ASSISTENTE DE LANÇAMENTO (ETAPAS) ================= */
+const WIZ_STEPS = [
+  {key:"raca", label:"Raça"},
+  {key:"origem", label:"Origem"},
+  {key:"destino", label:"Destino"},
+  {key:"carimbo", label:"Carimbo"},
+  {key:"obs", label:"Obs"},
+  {key:"revisar", label:"Revisar"}
+];
+const RACAS_OPCOES = ["Nelore","Cruzado","Angus","Girolando","Outro"];
+const DESTINOS_OPCOES = ["Confinamento","Recria","Refugo","Sequestro","Outro"];
+const OBS_CHIPS = ["Anelorado","Diz Anelorado","Não Brincado"];
+let wizIdx = 0;
+let wizData = {};
+let wizErr = "";
+
+function novoWizardAnimal(){
+  wizIdx = 0;
+  wizData = { raca:"", racaOutro:false, origem:"", destino:"", destinoOutro:false, carimbo:"", obs:"" };
+  wizErr = "";
+}
+$("btnAbrirWizardAnimal").onclick = ()=>{
+  novoWizardAnimal();
+  showView("viewWizardAnimal");
+  renderWiz();
+};
+$("btnWizBack").onclick = ()=>{
+  if(wizIdx>0){ wizIdx--; wizErr=""; renderWiz(); }
+  else if(confirm("Cancelar esse lançamento? Os dados dessa etapa serão perdidos.")){ showView("viewServico"); }
+};
+$("btnWizNext").onclick = ()=>{
+  const step = WIZ_STEPS[wizIdx];
+  if(step.key === "revisar"){ confirmarESalvarAnimal(); return; }
+  const err = validarWizStep(step.key);
+  if(err){ wizErr = err; renderWiz(); return; }
+  wizErr = "";
+  wizIdx++;
+  renderWiz();
+};
+function validarWizStep(key){
+  if(key==="raca") return wizData.raca ? null : "Selecione a raça.";
+  if(key==="destino") return wizData.destino ? null : "Selecione o destino.";
+  if(key==="carimbo"){
+    const v = parseFloat(wizData.carimbo);
+    return (v>0) ? null : "Informe o valor do Carimbo (@).";
+  }
+  return null;
+}
+function renderWiz(){
+  const step = WIZ_STEPS[wizIdx];
+  $("wizProgress").innerHTML = WIZ_STEPS.map((s,i)=>{
+    let cls="wiz-dot"; if(i<wizIdx) cls+=" done"; if(i===wizIdx) cls+=" current";
+    return `<div class="${cls}" title="${s.label}"></div>`;
+  }).join("");
+  $("topTitle").textContent = `Ord. ${animaisAtual.length+1} · Passo ${wizIdx+1}/${WIZ_STEPS.length} — ${step.label}`;
+  $("wizStepContent").innerHTML = renderWizStep(step.key);
+  bindWizStep(step.key);
+  $("btnWizBack").textContent = wizIdx===0 ? "Cancelar" : "Voltar";
+  $("btnWizNext").textContent = step.key==="revisar" ? "✅ Confirmar lançamento" : "Confirmar e avançar";
+}
+function renderWizStep(key){
+  const ordAtual = animaisAtual.length+1;
+  const errHtml = wizErr ? `<div class="err-banner">${wizErr}</div>` : "";
+  const locked = `<div class="locked-num">ORDEM DESTE LANÇAMENTO<span class="big">${ordAtual}</span></div>`;
+  if(key==="raca"){
+    return `${wizIdx===0?locked:""}<h2>Raça</h2>${errHtml}
+      <div class="opt-grid" id="optRaca">
+        ${RACAS_OPCOES.map(o=>{
+          const sel = o==="Outro" ? wizData.racaOutro : (wizData.raca===o && !wizData.racaOutro);
+          return `<div class="opt-card ${sel?"sel":""}" data-v="${o}">${o}</div>`;
+        }).join("")}
+      </div>
+      <div id="racaOutroWrap" class="${wizData.racaOutro?"":"hidden"}" style="margin-top:6px;">
+        <label>Qual raça?</label><input id="inRacaOutro" placeholder="Ex: Girolando x Nelore" value="${wizData.racaOutro?wizData.raca:""}">
+      </div>`;
+  }
+  if(key==="origem"){
+    return `<h2>Origem</h2><p class="sub">Opcional — de onde o animal veio (ex: nome do pasto).</p>${errHtml}
+      <input id="inOrigem" placeholder="Ex: Pasto 3" list="origensList" value="${wizData.origem||""}">`;
+  }
+  if(key==="destino"){
+    return `<h2>Destino</h2>${errHtml}
+      <div class="opt-grid" id="optDestino">
+        ${DESTINOS_OPCOES.map(o=>{
+          const sel = o==="Outro" ? wizData.destinoOutro : (wizData.destino===o && !wizData.destinoOutro);
+          return `<div class="opt-card ${sel?"sel":""}" data-v="${o}">${o}</div>`;
+        }).join("")}
+      </div>
+      <div id="destinoOutroWrap" class="${wizData.destinoOutro?"":"hidden"}" style="margin-top:6px;">
+        <label>Qual destino?</label><input id="inDestinoOutro" placeholder="Ex: Venda direta" value="${wizData.destinoOutro?wizData.destino:""}">
+      </div>`;
+  }
+  if(key==="carimbo"){
+    return `<h2>Carimbo (@)</h2><p class="sub">Valor em arrobas.</p>${errHtml}
+      <input type="number" step="0.1" inputmode="decimal" class="big-input" id="inCarimbo" placeholder="Ex: 10" value="${wizData.carimbo||""}">`;
+  }
+  if(key==="obs"){
+    return `<h2>Observações</h2><p class="sub">Opcional.</p>${errHtml}
+      <input id="inObsWiz" placeholder="Alguma observação sobre o animal..." value="${wizData.obs||""}">
+      <div class="chip-row" id="obsChips">
+        ${OBS_CHIPS.map(c=>`<button type="button" class="chip" data-v="${c}">${c}</button>`).join("")}
+      </div>`;
+  }
+  if(key==="revisar"){
+    const rows = [
+      {k:"Ordem", v: ordAtual, jump:null},
+      {k:"Raça", v: wizData.raca||"—", jump:"raca"},
+      {k:"Origem", v: wizData.origem||"—", jump:"origem"},
+      {k:"Destino", v: wizData.destino||"—", jump:"destino"},
+      {k:"Carimbo", v: wizData.carimbo?wizData.carimbo+" @":"—", jump:"carimbo"},
+      {k:"Obs", v: wizData.obs||"—", jump:"obs"}
+    ];
+    return `<h2>Revisar</h2><p class="sub">Toque em qualquer linha pra corrigir.</p>${errHtml}
+      <div class="rev-card">
+        ${rows.map(r=>`<div class="rev-row" ${r.jump?`data-jump="${r.jump}"`:""}><span class="k">${r.k}</span><span class="v">${r.v}${r.jump?'<span class="edit">✎</span>':""}</span></div>`).join("")}
+      </div>`;
+  }
+  return "";
+}
+function bindWizStep(key){
+  if(key==="raca"){
+    document.querySelectorAll("#optRaca .opt-card").forEach(card=>{
+      card.onclick = ()=>{
+        const v = card.dataset.v;
+        wizData.racaOutro = (v==="Outro");
+        wizData.raca = wizData.racaOutro ? "" : v;
+        renderWiz();
+        if(wizData.racaOutro) setTimeout(()=> $("inRacaOutro") && $("inRacaOutro").focus(), 30);
+      };
+    });
+    const inOutro = $("inRacaOutro");
+    if(inOutro) inOutro.oninput = e=> wizData.raca = e.target.value;
+  }
+  if(key==="origem"){
+    $("inOrigem").oninput = e=> wizData.origem = e.target.value;
+  }
+  if(key==="destino"){
+    document.querySelectorAll("#optDestino .opt-card").forEach(card=>{
+      card.onclick = ()=>{
+        const v = card.dataset.v;
+        wizData.destinoOutro = (v==="Outro");
+        wizData.destino = wizData.destinoOutro ? "" : v;
+        renderWiz();
+        if(wizData.destinoOutro) setTimeout(()=> $("inDestinoOutro") && $("inDestinoOutro").focus(), 30);
+      };
+    });
+    const inOutroD = $("inDestinoOutro");
+    if(inOutroD) inOutroD.oninput = e=> wizData.destino = e.target.value;
+  }
+  if(key==="carimbo"){
+    $("inCarimbo").oninput = e=> wizData.carimbo = e.target.value;
+    setTimeout(()=>{ const el=$("inCarimbo"); if(el) el.focus(); }, 30);
+  }
+  if(key==="obs"){
+    $("inObsWiz").oninput = e=> wizData.obs = e.target.value;
+    document.querySelectorAll("#obsChips .chip").forEach(ch=>{
+      ch.onclick = ()=>{ $("inObsWiz").value = ch.dataset.v; wizData.obs = ch.dataset.v; };
+    });
+  }
+  if(key==="revisar"){
+    document.querySelectorAll("[data-jump]").forEach(row=>{
+      row.onclick = ()=>{ wizIdx = WIZ_STEPS.findIndex(s=>s.key===row.dataset.jump); wizErr=""; renderWiz(); };
+    });
+  }
+}
+function confirmarESalvarAnimal(){
+  const carimbo = parseFloat(wizData.carimbo);
+  if(!wizData.raca){ wizIdx = WIZ_STEPS.findIndex(s=>s.key==="raca"); wizErr="Selecione a raça."; renderWiz(); return; }
+  if(!wizData.destino){ wizIdx = WIZ_STEPS.findIndex(s=>s.key==="destino"); wizErr="Selecione o destino."; renderWiz(); return; }
+  if(!carimbo || carimbo<=0){ wizIdx = WIZ_STEPS.findIndex(s=>s.key==="carimbo"); wizErr="Informe o valor do Carimbo (@)."; renderWiz(); return; }
+
+  const ord = animaisAtual.length+1;
   const animal = {
-    id: uid(), ord,
-    raca: $("eRaca").value, origem: $("eOrigem").value.trim(),
-    destino: $("eDestino").value, carimbo,
-    obs: $("eObs").value.trim(),
-    criadoEmLocal: Date.now()
+    id: uid(), controleId: servicoAtual.id, controleNumero: servicoAtual.numero||servicoAtual.id, ord,
+    raca: wizData.raca, origem: (wizData.origem||"").trim(), destino: wizData.destino, carimbo,
+    obs: (wizData.obs||"").trim(), status:"pendente", loteId:null, conferente1:null, conferente2:null, confAt:null,
+    criadoPor: currentUser.uid, criadoPorNome: currentAuditorNome || currentUser.email,
+    criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoEmLocal: Date.now()
   };
   animaisAtual.push(animal);
   localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
-  filaOffline.push({tipo:"novoAnimal", servicoId: servicoAtual.id, id: animal.id, dados: animal});
+  filaOffline.push({tipo:"novoAnimal", id:animal.id, dados:animal});
   salvarFilaLocal();
 
-  // atualiza totais no serviço
-  const totais = {totalAnimais: animaisAtual.length, totalArrobas: somaArrobas()};
+  const totais = {totalAnimais:animaisAtual.length, totalArrobas:somaArrobas()};
   Object.assign(servicoAtual, totais);
   const idx = servicosCache.findIndex(s=>s.id===servicoAtual.id);
   if(idx>=0) Object.assign(servicosCache[idx], totais);
   salvarCacheServicos();
-  filaOffline.push({tipo:"updServico", id: servicoAtual.id, dados: totais});
-  salvarFilaLocal();
-  processarFila();
+  filaOffline.push({tipo:"updServico", id:servicoAtual.id, dados:totais});
+  salvarFilaLocal(); processarFila();
 
-  // limpa apenas carimbo e obs para agilizar lançamentos seguidos
-  $("eCarimbo").value = ""; $("eObs").value = "";
-  $("eCarimbo").focus();
+  const origens = [...new Set(animaisAtual.map(a=>a.origem).filter(Boolean))];
+  $("origensList").innerHTML = origens.map(o=>`<option value="${o}">`).join("");
 
   renderTabela();
-};
-
+  showView("viewServico");
+}
 function excluirAnimal(id){
   if(!confirm("Excluir este lançamento?")) return;
   animaisAtual = animaisAtual.filter(a=>a.id!==id);
-  animaisAtual.forEach((a,i)=> a.ord = i+1); // renumera
+  animaisAtual.forEach((a,i)=> a.ord=i+1);
   localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
-  filaOffline.push({tipo:"delAnimal", servicoId: servicoAtual.id, id});
-  salvarFilaLocal();
-  processarFila();
+  // marca exclusão como "updAnimal" com status removido não é ideal; deleta direto se online, senão ignora offline-delete (edge case raro)
+  if(navigator.onLine) db.collection("animais").doc(id).delete().catch(console.error);
   renderTabela();
 }
-
-function somaArrobas(){ return animaisAtual.reduce((t,a)=> t + (parseFloat(a.carimbo)||0), 0); }
-
+function somaArrobas(){ return animaisAtual.reduce((t,a)=> t+(parseFloat(a.carimbo)||0),0); }
 function renderTabela(){
-  const tbody = $("tabelaAnimais");
-  tbody.innerHTML = "";
+  const tbody = $("tabelaAnimais"); tbody.innerHTML="";
   animaisAtual.forEach(a=>{
     const tr = document.createElement("tr");
     const cls = a.destino==="Confinamento"?"conf":a.destino==="Recria"?"recria":a.destino==="Refugo"?"refugo":"outro";
     tr.innerHTML = `<td>${a.ord}</td><td>${a.raca}</td><td>${a.origem||"-"}</td>
-      <td><span class="badge ${cls}">${a.destino}</span></td>
-      <td>${a.carimbo}</td><td>${a.obs||""}</td>
-      <td class="row-actions"><button class="btn-danger" data-id="${a.id}">✕</button></td>`;
-    tr.querySelector("button").onclick = ()=> excluirAnimal(a.id);
+      <td><span class="badge ${cls}">${a.destino}</span></td><td>${a.carimbo}</td>
+      <td><span class="badge ${a.status}">${a.status==="pendente"?"Pendente":"Solto"}</span></td>
+      <td>${a.obs||""}</td>
+      <td class="row-actions">${a.status==="pendente"?`<button class="btn-danger" data-id="${a.id}">✕</button>`:""}</td>`;
+    const btn = tr.querySelector("button");
+    if(btn) btn.onclick = ()=> excluirAnimal(a.id);
     tbody.appendChild(tr);
   });
-  $("proxOrd").textContent = animaisAtual.length + 1;
+  $("proxOrd").textContent = animaisAtual.length+1;
   calcularResumo();
 }
-
-function horaParaMin(h){
-  if(!h) return null;
-  const [hh,mm] = h.split(":").map(Number);
-  return hh*60+mm;
-}
+function horaParaMin(h){ if(!h) return null; const [hh,mm]=h.split(":").map(Number); return hh*60+mm; }
 function calcularResumo(){
-  const total = animaisAtual.length;
-  const arrobas = somaArrobas();
+  const total = animaisAtual.length, arrobas = somaArrobas();
   const conf = animaisAtual.filter(a=>a.destino==="Confinamento").length;
   const recria = animaisAtual.filter(a=>a.destino==="Recria").length;
   const refugo = animaisAtual.filter(a=>a.destino==="Refugo").length;
-  const outro = total - conf - recria - refugo;
-
-  $("cTotal").textContent = total;
-  $("cArrobas").textContent = arrobas.toFixed(1);
-  $("cConf").textContent = conf;
-  $("cRecria").textContent = recria;
-  $("cRefugo").textContent = refugo;
-  $("cOutro").textContent = outro;
-
-  // tempo total útil = (Intervalo - Início) + (Término - Retorno), descontando o intervalo de almoço/parada
-  const ini = horaParaMin($("fHoraInicio").value);
-  const interv = horaParaMin($("fIntervalo").value);
-  const ret = horaParaMin($("fRetorno").value);
-  const fim = horaParaMin($("fHoraTermino").value);
-  let minutos = 0;
-  if(ini!=null && interv!=null && interv>ini) minutos += (interv-ini);
-  if(ret!=null && fim!=null && fim>ret) minutos += (fim-ret);
-  const animaisHora = minutos>0 ? Math.round(total / (minutos/60)) : 0;
-  $("cAnimaisHora").textContent = animaisHora;
-
-  const qntPas = parseInt($("fResponsavel").dataset.qnt || 0);
-  $("cDiferenca").textContent = total - (parseInt($("fResponsavel").value)||total) === 0 ? 0 : "-";
+  const outro = total-conf-recria-refugo;
+  const pend = animaisAtual.filter(a=>a.status==="pendente").length;
+  $("cTotal").textContent=total; $("cArrobas").textContent=arrobas.toFixed(1);
+  $("cConf").textContent=conf; $("cRecria").textContent=recria; $("cRefugo").textContent=refugo; $("cOutro").textContent=outro;
+  $("cPendentes").textContent=pend;
+  const ini=horaParaMin($("fHoraInicio").value), interv=horaParaMin($("fIntervalo").value);
+  const ret=horaParaMin($("fRetorno").value), fim=horaParaMin($("fHoraTermino").value);
+  let minutos=0;
+  if(ini!=null && interv!=null && interv>ini) minutos+=(interv-ini);
+  if(ret!=null && fim!=null && fim>ret) minutos+=(fim-ret);
+  $("cAnimaisHora").textContent = minutos>0 ? Math.round(total/(minutos/60)) : 0;
 }
 
-/* ================= EXPORTAÇÃO ================= */
-function nomeArquivo(ext){
-  const s = servicoAtual;
-  return `Controle_Servico_${s.numero||s.id}_${s.data||""}.${ext}`.replace(/\s+/g,"_");
-}
-
+/* ================= EXPORTAÇÃO (controle atual) ================= */
+function nomeArquivo(ext){ const s=servicoAtual; return `Controle_Servico_${s.numero||s.id}_${s.data||""}.${ext}`.replace(/\s+/g,"_"); }
 $("btnExportExcel").onclick = ()=>{
   const cab = [
-    ["CONTROLE DE SERVIÇO Nº", $("fNumero").value],
-    ["Data", $("fData").value],
-    ["Vet. Responsável", $("fVet").value],
-    ["Qnt. Pas. / Responsável", $("fResponsavel").value],
+    ["CONTROLE DE SERVIÇO Nº", $("fNumero").value], ["Data", $("fData").value],
+    ["Vet. Responsável", $("fVet").value], ["Qnt. Pas. / Responsável", $("fResponsavel").value],
     ["Hora Início", $("fHoraInicio").value], ["Intervalo", $("fIntervalo").value],
     ["Retorno", $("fRetorno").value], ["Hora Término", $("fHoraTermino").value],
     ["Total Animais", $("cTotal").textContent], ["Total @ (Carimbo)", $("cArrobas").textContent],
-    ["Animais/Hora", $("cAnimaisHora").textContent],
-    ["Confinamento", $("cConf").textContent], ["Recria", $("cRecria").textContent],
-    ["Refugo", $("cRefugo").textContent], ["Outros", $("cOutro").textContent],
-    [], ["ORD.","RAÇA","ORIGEM","DESTINO","CARIMBO (@)","OBS."]
+    ["Animais/Hora", $("cAnimaisHora").textContent], ["Confinamento", $("cConf").textContent],
+    ["Recria", $("cRecria").textContent], ["Refugo", $("cRefugo").textContent], ["Outros", $("cOutro").textContent],
+    [], ["ORD.","RAÇA","ORIGEM","DESTINO","CARIMBO (@)","STATUS","OBS."]
   ];
-  animaisAtual.forEach(a=> cab.push([a.ord,a.raca,a.origem,a.destino,a.carimbo,a.obs]));
+  animaisAtual.forEach(a=> cab.push([a.ord,a.raca,a.origem,a.destino,a.carimbo,a.status,a.obs]));
   const ws = XLSX.utils.aoa_to_sheet(cab);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Controle");
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Controle");
   XLSX.writeFile(wb, nomeArquivo("xlsx"));
 };
-
 $("btnExportPDF").onclick = ()=>{
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  doc.setFontSize(14); doc.text("CONTROLE DE SERVIÇO", 14, 15);
-  doc.setFontSize(10);
+  const { jsPDF } = window.jspdf; const doc = new jsPDF();
+  doc.setFontSize(14); doc.text("CONTROLE DE SERVIÇO", 14, 15); doc.setFontSize(10);
   const linhas = [
     `Nº: ${$("fNumero").value}   Data: ${$("fData").value}   Vet.: ${$("fVet").value}`,
     `Início: ${$("fHoraInicio").value}  Intervalo: ${$("fIntervalo").value}  Retorno: ${$("fRetorno").value}  Término: ${$("fHoraTermino").value}`,
@@ -524,13 +875,255 @@ $("btnExportPDF").onclick = ()=>{
     `Confinamento: ${$("cConf").textContent}  Recria: ${$("cRecria").textContent}  Refugo: ${$("cRefugo").textContent}  Outros: ${$("cOutro").textContent}`
   ];
   doc.text(linhas, 14, 25);
-  doc.autoTable({
-    startY: 50,
-    head: [["Ord.","Raça","Origem","Destino","@ Carimbo","Obs."]],
-    body: animaisAtual.map(a=>[a.ord,a.raca,a.origem,a.destino,a.carimbo,a.obs]),
-    styles:{fontSize:8}
-  });
+  doc.autoTable({ startY:50, head:[["Ord.","Raça","Origem","Destino","@ Carimbo","Status","Obs."]],
+    body: animaisAtual.map(a=>[a.ord,a.raca,a.origem,a.destino,a.carimbo,a.status==="pendente"?"Pendente":"Solto",a.obs]), styles:{fontSize:8} });
   doc.save(nomeArquivo("pdf"));
+};
+
+/* ================= CONFERÊNCIA (SOLTAR REBANHO) ================= */
+let pendentesCache = [], selecionados = new Set();
+$("ctab-pendentes").onclick = ()=>{ $("ctab-pendentes").classList.add("active"); $("ctab-conferidos").classList.remove("active"); $("confPendentesView").classList.remove("hidden"); $("confConferidosView").classList.add("hidden"); };
+$("ctab-conferidos").onclick = ()=>{ $("ctab-conferidos").classList.add("active"); $("ctab-pendentes").classList.remove("active"); $("confConferidosView").classList.remove("hidden"); $("confPendentesView").classList.add("hidden"); renderConferidos(); };
+
+async function abrirConferencia(){
+  showView("viewConferencia"); setNavActive("conferencia");
+  $("topTitle").textContent = "Conferência";
+  selecionados.clear();
+  await carregarPendentes();
+  renderPendChecklist();
+}
+async function carregarPendentes(){
+  pendentesCache = [];
+  if(!navigator.onLine){ atualizarStatusSync(); return; }
+  try{
+    const snap = await db.collection("animais").where("criadoPor","==",currentUser.uid).where("status","==","pendente").get();
+    pendentesCache = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.controleNumero||"").localeCompare(b.controleNumero||"") || a.ord-b.ord);
+  }catch(e){ console.error(e); }
+}
+function renderPendChecklist(){
+  const wrap = $("pendChecklist"); wrap.innerHTML="";
+  if(!pendentesCache.length){ wrap.innerHTML = `<p class="pending">Nenhum animal pendente (ou você está offline — conecte pra ver os pendentes).</p>`; }
+  pendentesCache.forEach(a=>{
+    const row = document.createElement("div"); row.className="check-row";
+    row.innerHTML = `<input type="checkbox" data-id="${a.id}" ${selecionados.has(a.id)?"checked":""}>
+      <div>Controle ${a.controleNumero||"-"} · Ord. ${a.ord} · ${a.raca} · ${a.destino} · ${a.carimbo}@</div>`;
+    row.querySelector("input").onchange = e=>{ e.target.checked ? selecionados.add(a.id) : selecionados.delete(a.id); $("cSelecionados").textContent=selecionados.size; };
+    wrap.appendChild(row);
+  });
+  $("cSelecionados").textContent = selecionados.size;
+}
+$("btnSelectAllPend").onclick = ()=>{ pendentesCache.forEach(a=>selecionados.add(a.id)); renderPendChecklist(); };
+$("btnClearPend").onclick = ()=>{ selecionados.clear(); renderPendChecklist(); };
+$("btnConfirmarLote").onclick = async ()=>{
+  if(!selecionados.size){ alert("Selecione ao menos um animal."); return; }
+  if(!navigator.onLine){ alert("Conecte à internet pra confirmar e soltar o lote."); return; }
+  const loteId = uid();
+  const conf1 = $("inConf1").value.trim(), conf2 = $("inConf2").value.trim();
+  const dados = { status:"conferido", loteId, conferente1:conf1, conferente2:conf2, confAt: firebase.firestore.FieldValue.serverTimestamp() };
+  try{
+    const batch = db.batch();
+    selecionados.forEach(id=> batch.update(db.collection("animais").doc(id), dados));
+    await batch.commit();
+    // atualiza cache local do controle aberto, se algum item pertencer a ele
+    if(servicoAtual){
+      animaisAtual.forEach(a=>{ if(selecionados.has(a.id)) Object.assign(a, {status:"conferido", loteId, conferente1:conf1, conferente2:conf2}); });
+      localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+    }
+    selecionados.clear(); $("inConf1").value=""; $("inConf2").value="";
+    await carregarPendentes(); renderPendChecklist();
+    alert("Lote confirmado e solto com sucesso.");
+  }catch(e){ console.error(e); alert("Erro ao confirmar o lote."); }
+};
+async function renderConferidos(){
+  const tbody = $("tabelaConferidos"); tbody.innerHTML = `<tr><td colspan="5">Carregando...</td></tr>`;
+  if(!navigator.onLine){ tbody.innerHTML = `<tr><td colspan="5">Conecte à internet pra ver os já soltos.</td></tr>`; return; }
+  try{
+    const snap = await db.collection("animais").where("criadoPor","==",currentUser.uid).where("status","==","conferido").limit(200).get();
+    const lista = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    tbody.innerHTML = "";
+    lista.forEach(a=>{
+      const tr = document.createElement("tr");
+      tr.style.cursor="pointer";
+      tr.innerHTML = `<td>${a.ord}</td><td>${a.raca}</td><td>${a.destino}</td><td>${a.carimbo}</td><td>${(a.loteId||"").slice(-5)}</td>`;
+      tr.onclick = ()=> abrirEditDestino(a);
+      tbody.appendChild(tr);
+    });
+    if(!lista.length) tbody.innerHTML = `<tr><td colspan="5">Nenhum animal solto ainda.</td></tr>`;
+  }catch(e){ console.error(e); tbody.innerHTML = `<tr><td colspan="5">Erro ao carregar.</td></tr>`; }
+}
+let animalEditandoDestino = null;
+function abrirEditDestino(a){
+  animalEditandoDestino = a;
+  $("medAnimalLbl").textContent = `Ord. ${a.ord} · ${a.raca} · ${a.carimbo}@`;
+  $("medDestino").value = a.destino;
+  $("modalEditDestino").classList.remove("hidden");
+}
+$("medCancel").onclick = ()=> $("modalEditDestino").classList.add("hidden");
+$("medSave").onclick = async ()=>{
+  if(!animalEditandoDestino) return;
+  try{
+    await db.collection("animais").doc(animalEditandoDestino.id).update({destino:$("medDestino").value});
+    $("modalEditDestino").classList.add("hidden");
+    renderConferidos();
+  }catch(e){ console.error(e); alert("Erro ao salvar."); }
+};
+
+/* ================= ADMIN ================= */
+$("atab-visao").onclick = ()=>{ $("atab-visao").classList.add("active"); $("atab-auditores").classList.remove("active"); $("adminVisaoView").classList.remove("hidden"); $("adminAuditoresView").classList.add("hidden"); };
+$("atab-auditores").onclick = ()=>{ $("atab-auditores").classList.add("active"); $("atab-visao").classList.remove("active"); $("adminAuditoresView").classList.remove("hidden"); $("adminVisaoView").classList.add("hidden"); renderAuditoresList(); };
+
+async function abrirAdmin(){
+  showView("viewAdmin");
+  $("topTitle").textContent = "Painel Admin";
+  await carregarResumoAdmin();
+  iniciarFeedAdmin();
+}
+let adminAnimaisCache = [];
+async function carregarResumoAdmin(){
+  try{
+    const snap = await db.collection("animais").get();
+    adminAnimaisCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  }catch(e){ console.error(e); adminAnimaisCache = []; }
+  const total = adminAnimaisCache.length;
+  const pend = adminAnimaisCache.filter(a=>a.status==="pendente").length;
+  const arrobas = adminAnimaisCache.reduce((t,a)=>t+(parseFloat(a.carimbo)||0),0);
+  const lotes = new Set(adminAnimaisCache.filter(a=>a.loteId).map(a=>a.loteId)).size;
+  $("aTotal").textContent=total; $("aPendente").textContent=pend; $("aArrobas").textContent=arrobas.toFixed(1); $("aLotes").textContent=lotes;
+
+  renderBarras("barDestino", contarPor(adminAnimaisCache,"destino"));
+  renderBarras("barRaca", contarPor(adminAnimaisCache,"raca"));
+}
+function contarPor(lista, campo){
+  const map = {};
+  lista.forEach(a=>{ const k=a[campo]||"—"; map[k]=(map[k]||0)+1; });
+  return map;
+}
+function renderBarras(elId, map){
+  const wrap = $(elId); wrap.innerHTML="";
+  const max = Math.max(1, ...Object.values(map));
+  Object.entries(map).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>{
+    const row = document.createElement("div"); row.className="bar-row";
+    row.innerHTML = `<div class="bar-lbl"><span>${k}</span><span>${v}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(0)}%;"></div></div>`;
+    wrap.appendChild(row);
+  });
+  if(!Object.keys(map).length) wrap.innerHTML = `<p class="pending">Sem dados ainda.</p>`;
+}
+function iniciarFeedAdmin(){
+  if(adminFeedUnsub) adminFeedUnsub();
+  adminFeedUnsub = db.collection("animais").orderBy("criadoEmLocal","desc").limit(15)
+    .onSnapshot(snap=>{
+      const wrap = $("adminFeed"); wrap.innerHTML="";
+      snap.docs.forEach(d=>{
+        const a = d.data();
+        const item = document.createElement("div"); item.className="feed-item";
+        item.textContent = `${a.criadoPorNome||"auditor"} lançou Ord. ${a.ord} (${a.raca}, ${a.carimbo}@) — controle ${a.controleNumero||"-"}`;
+        wrap.appendChild(item);
+      });
+      if(!snap.docs.length) wrap.innerHTML = `<p class="pending">Sem atividade ainda.</p>`;
+    }, err=> console.error(err));
+}
+$("btnAdminExportExcel").onclick = ()=>{
+  const cab = [["CONTROLE","ORD.","RAÇA","ORIGEM","DESTINO","CARIMBO (@)","STATUS","AUDITOR","OBS."]];
+  adminAnimaisCache.forEach(a=> cab.push([a.controleNumero,a.ord,a.raca,a.origem,a.destino,a.carimbo,a.status,a.criadoPorNome,a.obs]));
+  const ws = XLSX.utils.aoa_to_sheet(cab); const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Todos"); XLSX.writeFile(wb, "Controle_Servico_Geral.xlsx");
+};
+$("btnAdminExportPDF").onclick = ()=>{
+  const { jsPDF } = window.jspdf; const doc = new jsPDF();
+  doc.setFontSize(14); doc.text("CONTROLE DE SERVIÇO — GERAL", 14, 15);
+  doc.autoTable({ startY:24, head:[["Controle","Ord.","Raça","Destino","@","Status","Auditor"]],
+    body: adminAnimaisCache.map(a=>[a.controleNumero,a.ord,a.raca,a.destino,a.carimbo,a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome]), styles:{fontSize:7} });
+  doc.save("Controle_Servico_Geral.pdf");
+};
+
+/* ---- editar lançamento (admin) ---- */
+$("adminEditSearch").addEventListener("input", ()=>{
+  const q = $("adminEditSearch").value.trim().toLowerCase();
+  const wrap = $("adminEditResults"); wrap.innerHTML="";
+  if(!q){ return; }
+  const res = adminAnimaisCache.filter(a=> (String(a.ord).includes(q)) || (a.controleNumero||"").toLowerCase().includes(q)).slice(0,20);
+  res.forEach(a=>{
+    const div = document.createElement("div"); div.className="list-item";
+    div.innerHTML = `<div><div style="font-weight:600;">Controle ${a.controleNumero} · Ord. ${a.ord}</div>
+      <div class="meta">${a.raca} · ${a.destino} · ${a.carimbo}@</div></div><div>✏</div>`;
+    div.onclick = ()=> abrirAdminEdit(a);
+    wrap.appendChild(div);
+  });
+});
+let animalEditandoAdmin = null;
+function abrirAdminEdit(a){
+  animalEditandoAdmin = a;
+  $("aeRaca").value=a.raca; $("aeOrigem").value=a.origem||""; $("aeDestino").value=a.destino;
+  $("aeCarimbo").value=a.carimbo; $("aeObs").value=a.obs||"";
+  $("modalAdminEdit").classList.remove("hidden");
+}
+$("aeCancel").onclick = ()=> $("modalAdminEdit").classList.add("hidden");
+$("aeSave").onclick = async ()=>{
+  if(!animalEditandoAdmin) return;
+  const dados = { raca:$("aeRaca").value, origem:$("aeOrigem").value.trim(), destino:$("aeDestino").value, carimbo:parseFloat($("aeCarimbo").value)||0, obs:$("aeObs").value.trim() };
+  try{
+    await db.collection("animais").doc(animalEditandoAdmin.id).update(dados);
+    $("modalAdminEdit").classList.add("hidden");
+    await carregarResumoAdmin();
+    alert("Lançamento atualizado.");
+  }catch(e){ console.error(e); alert("Erro ao salvar."); }
+};
+
+/* ---- auditores ---- */
+async function renderAuditoresList(){
+  const wrap = $("auditoresList");
+  wrap.innerHTML = "Carregando...";
+  let docs = [];
+  try{ const snap = await db.collection("auditores").get(); docs = snap.docs.map(d=>({uid:d.id, ...d.data()})); }
+  catch(e){ console.error(e); }
+  if(!docs.length){ wrap.innerHTML = `<p class="pending">Nenhum auditor cadastrado ainda.</p>`; return; }
+  wrap.innerHTML = docs.map(a=>`
+    <div class="aud-row">
+      <div><div class="aud-name">${a.nome||"—"}</div><div class="aud-email">${a.email||""}</div></div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+        <span class="aud-status ${a.ativo?"ativo":"bloqueado"}">${a.ativo?"Ativo":"Bloqueado"}</span>
+        <button class="btn-secondary" style="padding:8px 12px;" data-reset="${a.email}">🔑 Redefinir senha</button>
+        <button class="btn-secondary" style="padding:8px 12px;" data-uid="${a.uid}">${a.ativo?"Bloquear":"Desbloquear"}</button>
+      </div>
+    </div>`).join("");
+  wrap.querySelectorAll("button[data-reset]").forEach(btn=>{
+    btn.onclick = async ()=>{
+      const email = btn.dataset.reset;
+      if(!confirm(`Mandar e-mail de redefinição de senha pra ${email}?`)) return;
+      try{ await auth.sendPasswordResetEmail(email); alert("E-mail de redefinição enviado."); }
+      catch(e){ console.error(e); alert("Erro ao enviar e-mail."); }
+    };
+  });
+  wrap.querySelectorAll("button[data-uid]").forEach(btn=>{
+    btn.onclick = async ()=>{
+      const uidAl = btn.dataset.uid; const doc = docs.find(d=>d.uid===uidAl);
+      try{ await db.collection("auditores").doc(uidAl).update({ativo: !doc.ativo}); renderAuditoresList(); }
+      catch(e){ console.error(e); alert("Erro ao atualizar."); }
+    };
+  });
+}
+$("btnAddAuditor").onclick = async ()=>{
+  const nome=$("audNome").value.trim(), email=$("audEmail").value.trim(), senha=$("audSenha").value;
+  if(!nome||!email||!senha){ alert("Preencha nome, e-mail e senha."); return; }
+  if(senha.length<6){ alert("Senha precisa ter pelo menos 6 caracteres."); return; }
+  try{
+    let newUid;
+    try{
+      const cred = await secondaryAuth.createUserWithEmailAndPassword(email, senha);
+      newUid = cred.user.uid;
+    }catch(e){
+      if(e.code==="auth/email-already-in-use"){
+        try{ const cred2 = await secondaryAuth.signInWithEmailAndPassword(email, senha); newUid = cred2.user.uid; alert("E-mail já tinha conta — reaproveitando e liberando o acesso."); }
+        catch(e2){ await secondaryAuth.signOut().catch(()=>{}); alert("Esse e-mail já tem conta com outra senha. Peça a senha certa ou use outro e-mail."); return; }
+      } else { throw e; }
+    }
+    await db.collection("auditores").doc(newUid).set({ nome, email, ativo:true, createdAt: firebase.firestore.FieldValue.serverTimestamp(), createdBy: currentUser.uid }, {merge:true});
+    await secondaryAuth.signOut();
+    $("audNome").value=""; $("audEmail").value=""; $("audSenha").value="";
+    alert("Auditor cadastrado com sucesso.");
+    renderAuditoresList();
+  }catch(e){ console.error(e); alert("Erro ao cadastrar auditor."); }
 };
 </script>
 </body>
