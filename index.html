@@ -102,6 +102,8 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 .opt-grid{display:flex;flex-direction:column;gap:10px;margin-bottom:4px;}
 .opt-card{background:#fff;border:2px solid var(--borda);border-radius:10px;padding:14px 16px;font-size:15.5px;font-weight:600;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
 .opt-card.sel{border-color:var(--verde);background:var(--verde-bg);color:var(--verde);}
+.opt-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--cinza-claro);color:var(--cinza);font-size:12px;font-weight:700;margin-right:10px;flex-shrink:0;}
+.opt-card.sel .opt-num{background:var(--verde);color:#fff;}
 .locked-num{font-size:15px;font-weight:700;text-align:center;background:var(--verde-bg);border:2px dashed #bbf7d0;border-radius:10px;padding:16px;color:var(--verde);margin-bottom:16px;}
 .locked-num .big{display:block;font-size:36px;margin-top:2px;}
 .big-input{font-size:30px;font-weight:700;text-align:center;padding:16px 12px;}
@@ -152,7 +154,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <p id="listaVazia" class="pending hidden">Nenhum controle registrado ainda.</p>
   </div>
   <div class="fab-add">
-    <button class="btn-primary btn-block" id="btnNovoServico" style="padding:16px;font-size:16px;">+ Novo Controle de Serviço</button>
+    <button class="btn-primary btn-block" id="btnNovoServico" style="padding:16px;font-size:16px;">▶ Iniciar auditoria</button>
   </div>
 </div>
 
@@ -336,12 +338,46 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   <div class="fab-add" style="bottom:16px;position:static;margin-top:0;"></div>
 </div>
 
+<!-- ==================== AUDITOR: CONFIGURAÇÃO ==================== -->
+<div id="viewConfig" class="container hidden">
+  <div class="card">
+    <h2>Destinos</h2>
+    <p class="sub">Opções disponíveis na etapa "Destino" do lançamento. "Outro" sempre fica disponível à parte, pra digitar algo fora da lista.</p>
+    <div id="destinosConfigList"></div>
+    <div class="btn-row" style="margin-top:10px;">
+      <input id="novoDestinoInput" placeholder="Novo destino (ex: Venda)" style="flex:2;">
+      <button class="btn-secondary" id="btnAddDestinoConfig" style="flex:1;">+ Adicionar</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Próximo Nº de Controle</h2>
+    <p class="sub">Sugerido automaticamente sempre que você clicar em "Iniciar auditoria" — pode ajustar aqui, ou na hora, se precisar.</p>
+    <input type="number" id="proxNumeroControleInput">
+    <button class="btn-secondary btn-block" id="btnSalvarProxNumero" style="margin-top:10px;">Salvar</button>
+  </div>
+</div>
+
 <!-- NAV AUDITOR -->
 <div class="nav-tabs hidden" id="navAuditor">
   <button data-target="lista" class="active"><div>📋</div>Controles</button>
   <button data-target="conferencia"><div>✅</div>Conferência</button>
+  <button data-target="config"><div>⚙</div>Config</button>
 </div>
 <!-- NAV ADMIN (sem barra inferior — painel único) -->
+
+<!-- MODAL: INICIAR AUDITORIA -->
+<div id="modalIniciarAuditoria" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div class="card" style="max-width:400px;width:100%;">
+    <h2>Iniciar auditoria</h2>
+    <p class="sub">Dados desse controle de serviço — o resto (vet., horários) dá pra preencher depois, a qualquer momento.</p>
+    <label>Nº do Controle</label><input id="iaNumero" placeholder="Ex: 001">
+    <label style="margin-top:10px;">Data</label><input type="date" id="iaData">
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn-secondary" id="iaCancel">Cancelar</button>
+      <button class="btn-primary" id="iaConfirm">Começar</button>
+    </div>
+  </div>
+</div>
 
 <!-- MODAL: EDITAR DESTINO (conferido) -->
 <div id="modalEditDestino" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;">
@@ -349,13 +385,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <h2>Editar destino</h2>
     <p class="sub" id="medAnimalLbl">—</p>
     <label>Destino</label>
-    <select id="medDestino">
-      <option value="Confinamento">Confinamento</option>
-      <option value="Recria">Recria</option>
-      <option value="Refugo">Refugo</option>
-      <option value="Sequestro">Sequestro</option>
-      <option value="Outro">Outro</option>
-    </select>
+    <select id="medDestino"></select>
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn-secondary" id="medCancel">Cancelar</button>
       <button class="btn-primary" id="medSave">Salvar</button>
@@ -373,7 +403,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
       </div>
       <div><label>Origem</label><input id="aeOrigem"></div>
       <div><label>Destino</label>
-        <select id="aeDestino"><option value="Confinamento">Confinamento</option><option value="Recria">Recria</option><option value="Refugo">Refugo</option><option value="Sequestro">Sequestro</option><option value="Outro">Outro</option></select>
+        <select id="aeDestino"></select>
       </div>
       <div><label>Carimbo (@)</label><input type="number" step="0.1" id="aeCarimbo"></div>
       <div class="full"><label>Obs.</label><input id="aeObs"></div>
@@ -424,7 +454,7 @@ function salvarCacheServicos(){ localStorage.setItem(CACHE_KEY, JSON.stringify(s
 function carregarCacheServicos(){ servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]"); }
 
 function showView(view){
-  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewAdmin"].forEach(v=>$(v).classList.add("hidden"));
+  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewConfig","viewAdmin"].forEach(v=>$(v).classList.add("hidden"));
   $(view).classList.remove("hidden");
   $("navAuditor").classList.toggle("hidden", isAdmin || view==="viewLogin" || view==="viewWizardAnimal");
 }
@@ -473,6 +503,7 @@ $("btnLogout").onclick = ()=>{ if(adminFeedUnsub) adminFeedUnsub(); auth.signOut
 auth.onAuthStateChanged(async (user)=>{
   if(user){
     currentUser = user;
+    await carregarConfig();
     if(user.email && user.email.toLowerCase()===ADMIN_EMAIL){
       isAdmin = true;
       $("btnLogout").classList.remove("hidden");
@@ -507,9 +538,13 @@ auth.onAuthStateChanged(async (user)=>{
 });
 
 /* ================= NAV AUDITOR ================= */
-$("[data-target='lista']");
 document.querySelectorAll("#navAuditor button").forEach(b=>{
-  b.onclick = ()=>{ setNavActive(b.dataset.target); b.dataset.target==="lista" ? abrirLista() : abrirConferencia(); };
+  b.onclick = ()=>{
+    setNavActive(b.dataset.target);
+    if(b.dataset.target==="lista") abrirLista();
+    else if(b.dataset.target==="conferencia") abrirConferencia();
+    else if(b.dataset.target==="config") abrirConfig();
+  };
 });
 
 /* ================= LISTA DE CONTROLES ================= */
@@ -541,9 +576,21 @@ function renderLista(lista){
   });
 }
 $("btnNovoServico").onclick = ()=>{
+  $("iaNumero").value = String(configCache.proximoNumeroControle||1).padStart(3,"0");
+  $("iaData").value = new Date().toISOString().slice(0,10);
+  $("modalIniciarAuditoria").classList.remove("hidden");
+  setTimeout(()=>{ const el=$("iaNumero"); if(el) el.focus(); }, 30);
+};
+$("iaCancel").onclick = ()=> $("modalIniciarAuditoria").classList.add("hidden");
+$("iaConfirm").onclick = ()=>{
+  const numero = $("iaNumero").value.trim();
+  const data = $("iaData").value;
+  if(!data){ alert("Escolha uma data."); return; }
+  $("modalIniciarAuditoria").classList.add("hidden");
+
   const id = uid();
   const dados = {
-    numero:"", data:new Date().toISOString().slice(0,10),
+    numero, data,
     vetResponsavel:"", responsavel:"",
     horaInicio:"", intervalo:"", retorno:"", horaTermino:"",
     totalAnimais:0, totalArrobas:0,
@@ -554,7 +601,24 @@ $("btnNovoServico").onclick = ()=>{
   salvarCacheServicos();
   filaOffline.push({tipo:"novoServico", id, dados});
   salvarFilaLocal(); processarFila();
-  abrirServico(id, true);
+
+  // avança o contador sugerido do próximo Nº de Controle
+  const numeroInt = parseInt(numero, 10);
+  if(!isNaN(numeroInt) && numeroInt >= (configCache.proximoNumeroControle||1)){
+    configCache.proximoNumeroControle = numeroInt + 1;
+    salvarConfig();
+  }
+
+  servicoAtual = {id, ...dados};
+  animaisAtual = [];
+  localStorage.setItem("animais_"+id, JSON.stringify(animaisAtual));
+  const origens = [];
+  $("origensList").innerHTML = "";
+
+  // vai direto pro assistente por etapas, igual ao Audita Certo
+  novoWizardAnimal();
+  showView("viewWizardAnimal");
+  renderWiz();
 };
 $("btnVoltarLista").onclick = abrirLista;
 
@@ -613,8 +677,66 @@ const WIZ_STEPS = [
   {key:"revisar", label:"Revisar"}
 ];
 const RACAS_OPCOES = ["Nelore","Cruzado","Angus","Girolando","Outro"];
-const DESTINOS_OPCOES = ["Confinamento","Recria","Refugo","Sequestro","Outro"];
+let DESTINOS_OPCOES = ["Confinamento","Recria","Refugo","Sequestro","Outro"]; // sobrescrito por carregarConfig() com a lista salva
 const OBS_CHIPS = ["Anelorado","Diz Anelorado","Não Brincado"];
+
+/* ================= CONFIGURAÇÃO (destinos + próximo nº de controle) ================= */
+let configCache = { destinos: ["Confinamento","Recria","Refugo","Sequestro"], proximoNumeroControle: 1 };
+async function carregarConfig(){
+  try{
+    const doc = await db.collection("config").doc("geral").get();
+    if(doc.exists){
+      const d = doc.data();
+      if(Array.isArray(d.destinos) && d.destinos.length) configCache.destinos = d.destinos;
+      if(d.proximoNumeroControle) configCache.proximoNumeroControle = d.proximoNumeroControle;
+    }
+  }catch(e){ console.error(e); }
+  DESTINOS_OPCOES = [...configCache.destinos, "Outro"];
+}
+async function salvarConfig(){
+  try{ await db.collection("config").doc("geral").set(configCache, {merge:true}); }
+  catch(e){ console.error(e); }
+  DESTINOS_OPCOES = [...configCache.destinos, "Outro"];
+}
+async function abrirConfig(){
+  showView("viewConfig"); setNavActive("config");
+  $("topTitle").textContent = "Configurações";
+  renderDestinosConfig();
+  $("proxNumeroControleInput").value = configCache.proximoNumeroControle;
+}
+function renderDestinosConfig(){
+  const wrap = $("destinosConfigList"); wrap.innerHTML = "";
+  if(!configCache.destinos.length){ wrap.innerHTML = `<p class="pending">Nenhum destino cadastrado.</p>`; }
+  configCache.destinos.forEach((d,i)=>{
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `<div>${d}</div><button class="btn-danger" data-i="${i}">✕</button>`;
+    row.querySelector("button").onclick = ()=> removerDestinoConfig(i);
+    wrap.appendChild(row);
+  });
+}
+$("btnAddDestinoConfig").onclick = ()=>{
+  const v = $("novoDestinoInput").value.trim();
+  if(!v){ return; }
+  if(configCache.destinos.some(d=>d.toLowerCase()===v.toLowerCase())){ alert("Esse destino já existe."); return; }
+  configCache.destinos.push(v);
+  $("novoDestinoInput").value = "";
+  renderDestinosConfig();
+  salvarConfig();
+};
+function removerDestinoConfig(i){
+  if(!confirm(`Remover "${configCache.destinos[i]}" da lista de destinos?`)) return;
+  configCache.destinos.splice(i,1);
+  renderDestinosConfig();
+  salvarConfig();
+}
+$("btnSalvarProxNumero").onclick = ()=>{
+  const v = parseInt($("proxNumeroControleInput").value, 10);
+  if(!v || v<1){ alert("Informe um número válido."); return; }
+  configCache.proximoNumeroControle = v;
+  salvarConfig();
+  alert("Salvo.");
+};
 let wizIdx = 0;
 let wizData = {};
 let wizErr = "";
@@ -630,8 +752,9 @@ $("btnAbrirWizardAnimal").onclick = ()=>{
   renderWiz();
 };
 $("btnWizBack").onclick = ()=>{
-  if(wizIdx>0){ wizIdx--; wizErr=""; renderWiz(); }
-  else if(confirm("Cancelar esse lançamento? Os dados dessa etapa serão perdidos.")){ showView("viewServico"); }
+  if(wizIdx>0){ wizIdx--; wizErr=""; renderWiz(); return; }
+  if(animaisAtual.length>0){ showView("viewServico"); return; }
+  if(confirm("Cancelar esse lançamento? Os dados dessa etapa serão perdidos.")){ showView("viewServico"); }
 };
 $("btnWizNext").onclick = ()=>{
   const step = WIZ_STEPS[wizIdx];
@@ -660,7 +783,7 @@ function renderWiz(){
   $("topTitle").textContent = `Ord. ${animaisAtual.length+1} · Passo ${wizIdx+1}/${WIZ_STEPS.length} — ${step.label}`;
   $("wizStepContent").innerHTML = renderWizStep(step.key);
   bindWizStep(step.key);
-  $("btnWizBack").textContent = wizIdx===0 ? "Cancelar" : "Voltar";
+  $("btnWizBack").textContent = wizIdx>0 ? "Voltar" : (animaisAtual.length>0 ? "✕ Fechar" : "Cancelar");
   $("btnWizNext").textContent = step.key==="revisar" ? "✅ Confirmar lançamento" : "Confirmar e avançar";
 }
 function renderWizStep(key){
@@ -670,9 +793,9 @@ function renderWizStep(key){
   if(key==="raca"){
     return `${wizIdx===0?locked:""}<h2>Raça</h2>${errHtml}
       <div class="opt-grid" id="optRaca">
-        ${RACAS_OPCOES.map(o=>{
+        ${RACAS_OPCOES.map((o,i)=>{
           const sel = o==="Outro" ? wizData.racaOutro : (wizData.raca===o && !wizData.racaOutro);
-          return `<div class="opt-card ${sel?"sel":""}" data-v="${o}">${o}</div>`;
+          return `<div class="opt-card ${sel?"sel":""}" data-v="${o}"><span><span class="opt-num">${i+1}</span>${o}</span></div>`;
         }).join("")}
       </div>
       <div id="racaOutroWrap" class="${wizData.racaOutro?"":"hidden"}" style="margin-top:6px;">
@@ -686,9 +809,9 @@ function renderWizStep(key){
   if(key==="destino"){
     return `<h2>Destino</h2>${errHtml}
       <div class="opt-grid" id="optDestino">
-        ${DESTINOS_OPCOES.map(o=>{
+        ${DESTINOS_OPCOES.map((o,i)=>{
           const sel = o==="Outro" ? wizData.destinoOutro : (wizData.destino===o && !wizData.destinoOutro);
-          return `<div class="opt-card ${sel?"sel":""}" data-v="${o}">${o}</div>`;
+          return `<div class="opt-card ${sel?"sel":""}" data-v="${o}"><span><span class="opt-num">${i+1}</span>${o}</span></div>`;
         }).join("")}
       </div>
       <div id="destinoOutroWrap" class="${wizData.destinoOutro?"":"hidden"}" style="margin-top:6px;">
@@ -722,16 +845,22 @@ function renderWizStep(key){
   }
   return "";
 }
+function escolherRaca(v){
+  wizData.racaOutro = (v==="Outro");
+  wizData.raca = wizData.racaOutro ? "" : v;
+  renderWiz();
+  if(wizData.racaOutro) setTimeout(()=>{ const el=$("inRacaOutro"); if(el) el.focus(); }, 30);
+}
+function escolherDestino(v){
+  wizData.destinoOutro = (v==="Outro");
+  wizData.destino = wizData.destinoOutro ? "" : v;
+  renderWiz();
+  if(wizData.destinoOutro) setTimeout(()=>{ const el=$("inDestinoOutro"); if(el) el.focus(); }, 30);
+}
 function bindWizStep(key){
   if(key==="raca"){
     document.querySelectorAll("#optRaca .opt-card").forEach(card=>{
-      card.onclick = ()=>{
-        const v = card.dataset.v;
-        wizData.racaOutro = (v==="Outro");
-        wizData.raca = wizData.racaOutro ? "" : v;
-        renderWiz();
-        if(wizData.racaOutro) setTimeout(()=> $("inRacaOutro") && $("inRacaOutro").focus(), 30);
-      };
+      card.onclick = ()=> escolherRaca(card.dataset.v);
     });
     const inOutro = $("inRacaOutro");
     if(inOutro) inOutro.oninput = e=> wizData.raca = e.target.value;
@@ -741,13 +870,7 @@ function bindWizStep(key){
   }
   if(key==="destino"){
     document.querySelectorAll("#optDestino .opt-card").forEach(card=>{
-      card.onclick = ()=>{
-        const v = card.dataset.v;
-        wizData.destinoOutro = (v==="Outro");
-        wizData.destino = wizData.destinoOutro ? "" : v;
-        renderWiz();
-        if(wizData.destinoOutro) setTimeout(()=> $("inDestinoOutro") && $("inDestinoOutro").focus(), 30);
-      };
+      card.onclick = ()=> escolherDestino(card.dataset.v);
     });
     const inOutroD = $("inDestinoOutro");
     if(inOutroD) inOutroD.oninput = e=> wizData.destino = e.target.value;
@@ -768,6 +891,33 @@ function bindWizStep(key){
     });
   }
 }
+/* ---- atalhos de teclado no assistente: número escolhe (e já avança, quando
+   não precisa de campo extra), Enter confirma a etapa atual — igual ao Audita Certo ---- */
+document.addEventListener("keydown", (e)=>{
+  if(document.getElementById("viewWizardAnimal").classList.contains("hidden")) return;
+  if(e.key === "Enter"){
+    if(e.target && e.target.tagName === "TEXTAREA") return;
+    const btn = $("btnWizNext");
+    if(btn && !btn.disabled){ e.preventDefault(); btn.click(); }
+    return;
+  }
+  if(/^[1-9]$/.test(e.key)){
+    if(e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+    const step = WIZ_STEPS[wizIdx];
+    const idx = Number(e.key) - 1;
+    if(step.key === "raca" && idx < RACAS_OPCOES.length){
+      e.preventDefault();
+      const v = RACAS_OPCOES[idx];
+      escolherRaca(v);
+      if(v !== "Outro") setTimeout(()=>{ const btn=$("btnWizNext"); if(btn && !btn.disabled) btn.click(); }, 0);
+    } else if(step.key === "destino" && idx < DESTINOS_OPCOES.length){
+      e.preventDefault();
+      const v = DESTINOS_OPCOES[idx];
+      escolherDestino(v);
+      if(v !== "Outro") setTimeout(()=>{ const btn=$("btnWizNext"); if(btn && !btn.disabled) btn.click(); }, 0);
+    }
+  }
+});
 function confirmarESalvarAnimal(){
   const carimbo = parseFloat(wizData.carimbo);
   if(!wizData.raca){ wizIdx = WIZ_STEPS.findIndex(s=>s.key==="raca"); wizErr="Selecione a raça."; renderWiz(); return; }
@@ -799,7 +949,9 @@ function confirmarESalvarAnimal(){
   $("origensList").innerHTML = origens.map(o=>`<option value="${o}">`).join("");
 
   renderTabela();
-  showView("viewServico");
+  // continua no assistente, já pronto pro próximo animal (igual ao Audita Certo)
+  novoWizardAnimal();
+  renderWiz();
 }
 function excluirAnimal(id){
   if(!confirm("Excluir este lançamento?")) return;
@@ -955,6 +1107,7 @@ let animalEditandoDestino = null;
 function abrirEditDestino(a){
   animalEditandoDestino = a;
   $("medAnimalLbl").textContent = `Ord. ${a.ord} · ${a.raca} · ${a.carimbo}@`;
+  $("medDestino").innerHTML = DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
   $("medDestino").value = a.destino;
   $("modalEditDestino").classList.remove("hidden");
 }
@@ -1054,7 +1207,9 @@ $("adminEditSearch").addEventListener("input", ()=>{
 let animalEditandoAdmin = null;
 function abrirAdminEdit(a){
   animalEditandoAdmin = a;
-  $("aeRaca").value=a.raca; $("aeOrigem").value=a.origem||""; $("aeDestino").value=a.destino;
+  $("aeRaca").value=a.raca; $("aeOrigem").value=a.origem||"";
+  $("aeDestino").innerHTML = DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
+  $("aeDestino").value=a.destino;
   $("aeCarimbo").value=a.carimbo; $("aeObs").value=a.obs||"";
   $("modalAdminEdit").classList.remove("hidden");
 }
