@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root{
   --verde:#166534; --verde-claro:#16a34a; --verde-bg:#f0fdf4;
@@ -79,6 +80,8 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 .check-row{display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--borda);font-size:13px;}
 .check-row input[type=checkbox]{width:18px;height:18px;flex:none;}
 .stat-mini{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px dashed var(--borda);}
+.chart-box{position:relative;height:220px;}
+.chart-box canvas{max-width:100%;}
 .bar-row{margin-bottom:8px;}
 .bar-row .bar-lbl{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;}
 .bar-track{background:var(--cinza-claro);border-radius:6px;height:10px;overflow:hidden;}
@@ -179,8 +182,8 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <div class="stat-mini hidden" id="opIntervaloRow"><span>Parou</span><span id="opIntervaloLbl">—</span></div>
     <div class="stat-mini hidden" id="opRetornoRow"><span>Retomou</span><span id="opRetornoLbl">—</span></div>
     <div class="stat-mini hidden" id="opTerminoRow"><span>Terminou</span><span id="opTerminoLbl">—</span></div>
-    <button class="btn-secondary btn-block" id="btnPararOperacao" style="margin-top:10px;">🛑 Parar operação</button>
-    <button class="btn-primary btn-block hidden" id="btnRetomarOperacao" style="margin-top:10px;">▶ Retomar auditoria</button>
+    <button class="btn-primary btn-block hidden" id="btnFinalizarOperacao" style="margin-top:10px;">🏁 Finalizar operação</button>
+    <p id="opFinalizadaMsg" class="sub hidden" style="margin-top:8px;">✅ Operação finalizada — pode iniciar outra auditoria quando quiser (normalmente no próximo dia).</p>
   </div>
 
   <div class="card">
@@ -233,7 +236,9 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 <div id="viewWizardAnimal" class="container hidden">
   <div class="card">
     <div class="wiz-progress" id="wizProgress"></div>
+    <div id="wizPausadoBanner" class="hidden" style="background:#fff3cd;border:1px solid #ffc107;color:#856404;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;font-weight:600;"></div>
     <div id="wizStepContent"></div>
+    <button class="btn-secondary btn-block" id="btnPausarOperacaoWiz" style="margin-top:14px;">⏸ Pausar operação</button>
     <div class="wiz-bottom">
       <button class="btn-secondary" id="btnWizBack">Cancelar</button>
       <button class="btn-primary" id="btnWizNext">Confirmar e avançar</button>
@@ -295,6 +300,16 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 
   <div id="adminVisaoView">
     <div class="card">
+      <h2>Filtros</h2>
+      <div class="grid">
+        <div><label>Retiro</label><div id="retiroChecklist"></div></div>
+        <div><label>De</label><input type="date" id="adminDataDe"></div>
+        <div><label>Até</label><input type="date" id="adminDataAte"></div>
+      </div>
+      <button class="btn-secondary btn-block" id="btnLimparFiltrosAdmin" style="margin-top:8px;">Limpar filtros</button>
+    </div>
+
+    <div class="card">
       <div class="export-bar" style="margin-bottom:14px;">
         <button class="btn-secondary" id="btnAdminExportExcel">⬇ Excel (tudo)</button>
         <button class="btn-secondary" id="btnAdminExportPDF">⬇ PDF (tudo)</button>
@@ -308,12 +323,20 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     </div>
 
     <div class="card">
+      <h2>Animais por dia</h2>
+      <div class="chart-box"><canvas id="chartPorDia"></canvas></div>
+    </div>
+    <div class="card">
       <h2>Por destino</h2>
-      <div id="barDestino"></div>
+      <div class="chart-box"><canvas id="chartDestino"></canvas></div>
     </div>
     <div class="card">
       <h2>Por raça</h2>
-      <div id="barRaca"></div>
+      <div class="chart-box"><canvas id="chartRaca"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Por categoria</h2>
+      <div class="chart-box"><canvas id="chartCategoria"></canvas></div>
     </div>
 
     <div class="card">
@@ -385,19 +408,6 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn-secondary" id="iaCancel">Cancelar</button>
       <button class="btn-primary" id="iaConfirm">Começar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL: PARAR / RETOMAR OPERAÇÃO -->
-<div id="modalHoraOperacao" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;">
-  <div class="card" style="max-width:360px;width:100%;">
-    <h2 id="mhoTitulo">Parar operação</h2>
-    <label id="mhoLabel">Horário que está parando</label>
-    <input type="time" id="mhoInput">
-    <div class="btn-row" style="margin-top:14px;">
-      <button class="btn-secondary" id="mhoCancel">Cancelar</button>
-      <button class="btn-primary" id="mhoConfirm">Confirmar</button>
     </div>
   </div>
 </div>
@@ -752,42 +762,58 @@ function renderOperacaoCard(){
   if(finalizada) status = "🔒 Finalizada";
   else if(pausada) status = "⏸ Pausada";
   $("opStatusLbl").textContent = status;
-  $("btnPararOperacao").classList.toggle("hidden", pausada || finalizada);
-  $("btnRetomarOperacao").classList.toggle("hidden", !pausada);
+  $("btnFinalizarOperacao").classList.toggle("hidden", finalizada);
+  $("opFinalizadaMsg").classList.toggle("hidden", !finalizada);
 }
-let operacaoModoAtual = null; // 'parar-intervalo' | 'parar-termino' | 'retomar'
-$("btnPararOperacao").onclick = ()=>{
-  operacaoModoAtual = servicoAtual.intervalo ? "parar-termino" : "parar-intervalo";
-  $("mhoTitulo").textContent = operacaoModoAtual==="parar-termino" ? "Finalizar operação" : "Parar operação";
-  $("mhoLabel").textContent = "Horário que está parando";
-  $("mhoInput").value = horaAgoraHHMM();
-  $("modalHoraOperacao").classList.remove("hidden");
-};
-$("btnRetomarOperacao").onclick = ()=>{
-  operacaoModoAtual = "retomar";
-  $("mhoTitulo").textContent = "Retomar auditoria";
-  $("mhoLabel").textContent = "Horário que está retomando";
-  $("mhoInput").value = horaAgoraHHMM();
-  $("modalHoraOperacao").classList.remove("hidden");
-};
-$("mhoCancel").onclick = ()=> $("modalHoraOperacao").classList.add("hidden");
-$("mhoConfirm").onclick = ()=>{
-  const hora = $("mhoInput").value;
-  if(!hora){ alert("Informe o horário."); return; }
-  let campo = null;
-  if(operacaoModoAtual==="parar-intervalo") campo="intervalo";
-  else if(operacaoModoAtual==="parar-termino") campo="horaTermino";
-  else if(operacaoModoAtual==="retomar") campo="retorno";
-  if(!campo) return;
+/* Registra automaticamente o horário atual num campo da operação (intervalo/retorno/
+   horaTermino), salva local + fila de sincronização, e atualiza a tela. Usado tanto pelo
+   botão Pausar/Retomar (dentro do assistente) quanto por Finalizar operação. */
+function registrarHoraOperacao(campo){
+  const hora = horaAgoraHHMM();
   servicoAtual[campo] = hora;
   const idx = servicosCache.findIndex(s=>s.id===servicoAtual.id);
   if(idx>=0) servicosCache[idx][campo] = hora;
   salvarCacheServicos();
   filaOffline.push({tipo:"updServico", id:servicoAtual.id, dados:{[campo]:hora}});
   salvarFilaLocal(); processarFila();
-  $("modalHoraOperacao").classList.add("hidden");
   renderOperacaoCard();
   calcularResumo();
+  return hora;
+}
+$("btnFinalizarOperacao").onclick = ()=>{
+  if(!confirm("Finalizar a operação de hoje? Registra o horário final agora — dá pra iniciar outra auditoria depois, normalmente no próximo dia.")) return;
+  const hora = registrarHoraOperacao("horaTermino");
+  alert(`✅ Operação finalizada às ${hora}.`);
+};
+/* Pausar/Retomar dentro do assistente: hora sempre automática (não digita nada),
+   com um popup curto confirmando, pra não atrapalhar o ritmo de quem está auditando. */
+function wizOperacaoEstaPausada(){
+  return !!(servicoAtual && servicoAtual.intervalo && !servicoAtual.retorno);
+}
+function atualizarBotaoPausarWiz(){
+  const btn = $("btnPausarOperacaoWiz");
+  const banner = $("wizPausadoBanner");
+  if(!servicoAtual){ btn.classList.add("hidden"); return; }
+  btn.classList.remove("hidden");
+  if(wizOperacaoEstaPausada()){
+    btn.textContent = "▶ Retomar operação";
+    banner.textContent = `⏸ Operação pausada às ${servicoAtual.intervalo} — toque em "Retomar operação" pra continuar.`;
+    banner.classList.remove("hidden");
+  } else {
+    btn.textContent = "⏸ Pausar operação";
+    banner.classList.add("hidden");
+  }
+}
+$("btnPausarOperacaoWiz").onclick = ()=>{
+  if(wizOperacaoEstaPausada()){
+    const hora = registrarHoraOperacao("retorno");
+    atualizarBotaoPausarWiz();
+    alert(`▶ Operação retomada às ${hora}.`);
+  } else {
+    const hora = registrarHoraOperacao("intervalo");
+    atualizarBotaoPausarWiz();
+    alert(`⏸ Operação pausada às ${hora}.`);
+  }
 };
 
 /* ================= ASSISTENTE DE LANÇAMENTO (ETAPAS) ================= */
@@ -911,6 +937,7 @@ function renderWiz(){
   bindWizStep(step.key);
   $("btnWizBack").textContent = wizIdx>0 ? "Voltar" : (animaisAtual.length>0 ? "✕ Fechar" : "Cancelar");
   $("btnWizNext").textContent = step.key==="revisar" ? "✅ Confirmar lançamento" : "Confirmar e avançar";
+  atualizarBotaoPausarWiz();
 }
 function renderWizStep(key){
   const ordAtual = proximaOrdemDoDia;
@@ -1399,35 +1426,109 @@ async function abrirAdmin(){
   iniciarFeedAdmin();
 }
 let adminAnimaisCache = [];
+let adminControlesCache = [];
+let adminRetirosSelecionados = new Set();
+let chartsAdmin = {};
 async function carregarResumoAdmin(){
   try{
-    const snap = await db.collection("animais").get();
-    adminAnimaisCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
-  }catch(e){ console.error(e); adminAnimaisCache = []; }
-  const total = adminAnimaisCache.length;
-  const pend = adminAnimaisCache.filter(a=>a.status==="pendente").length;
-  const arrobas = adminAnimaisCache.reduce((t,a)=>t+(parseFloat(a.carimbo)||0),0);
-  const lotes = new Set(adminAnimaisCache.filter(a=>a.loteId).map(a=>a.loteId)).size;
-  $("aTotal").textContent=total; $("aPendente").textContent=pend; $("aArrobas").textContent=arrobas.toFixed(1); $("aLotes").textContent=lotes;
+    const snapAnimais = await db.collection("animais").get();
+    adminAnimaisCache = snapAnimais.docs.map(d=>({id:d.id, ...d.data()}));
+    const snapControles = await db.collection("controles").get();
+    adminControlesCache = snapControles.docs.map(d=>({id:d.id, ...d.data()}));
+  }catch(e){ console.error(e); adminAnimaisCache = []; adminControlesCache = []; }
 
-  renderBarras("barDestino", contarPor(adminAnimaisCache,"destino"));
-  renderBarras("barRaca", contarPor(adminAnimaisCache,"raca"));
+  // junta o retiro de cada animal a partir do controle que ele pertence (o retiro
+  // fica salvo só no controle, não em cada lançamento individual)
+  const retiroPorControle = {};
+  adminControlesCache.forEach(c=> retiroPorControle[c.id] = c.retiro || "Sede");
+  adminAnimaisCache.forEach(a=> a._retiro = retiroPorControle[a.controleId] || "Sede");
+
+  const retirosUnicos = [...new Set(adminAnimaisCache.map(a=>a._retiro))].sort();
+  if(adminRetirosSelecionados.size === 0) retirosUnicos.forEach(r=> adminRetirosSelecionados.add(r));
+  renderRetiroChecklist(retirosUnicos);
+
+  aplicarFiltrosAdmin();
 }
+function renderRetiroChecklist(retiros){
+  const wrap = $("retiroChecklist"); wrap.innerHTML = "";
+  if(!retiros.length){ wrap.innerHTML = `<p class="pending">Nenhum retiro ainda.</p>`; return; }
+  retiros.forEach(r=>{
+    const lbl = document.createElement("label");
+    lbl.style.cssText = "display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px;";
+    lbl.innerHTML = `<input type="checkbox" ${adminRetirosSelecionados.has(r)?"checked":""}> ${r}`;
+    lbl.querySelector("input").onchange = (e)=>{
+      if(e.target.checked) adminRetirosSelecionados.add(r); else adminRetirosSelecionados.delete(r);
+      aplicarFiltrosAdmin();
+    };
+    wrap.appendChild(lbl);
+  });
+}
+function adminListaFiltrada(){
+  const de = $("adminDataDe").value, ate = $("adminDataAte").value;
+  return adminAnimaisCache.filter(a=>{
+    if(adminRetirosSelecionados.size && !adminRetirosSelecionados.has(a._retiro)) return false;
+    if(de && (a.data||"") < de) return false;
+    if(ate && (a.data||"") > ate) return false;
+    return true;
+  });
+}
+function aplicarFiltrosAdmin(){
+  const lista = adminListaFiltrada();
+  const total = lista.length;
+  const pend = lista.filter(a=>a.status==="pendente").length;
+  const arrobas = lista.reduce((t,a)=>t+(parseFloat(a.carimbo)||0),0);
+  const lotes = new Set(lista.filter(a=>a.loteId).map(a=>a.loteId)).size;
+  $("aTotal").textContent=total; $("aPendente").textContent=pend; $("aArrobas").textContent=arrobas.toFixed(1); $("aLotes").textContent=lotes;
+  desenharGraficosAdmin(lista);
+}
+$("adminDataDe").addEventListener("change", aplicarFiltrosAdmin);
+$("adminDataAte").addEventListener("change", aplicarFiltrosAdmin);
+$("btnLimparFiltrosAdmin").onclick = ()=>{
+  $("adminDataDe").value=""; $("adminDataAte").value="";
+  const retirosUnicos = [...new Set(adminAnimaisCache.map(a=>a._retiro))].sort();
+  adminRetirosSelecionados = new Set(retirosUnicos);
+  renderRetiroChecklist(retirosUnicos);
+  aplicarFiltrosAdmin();
+};
 function contarPor(lista, campo){
   const map = {};
   lista.forEach(a=>{ const k=a[campo]||"—"; map[k]=(map[k]||0)+1; });
   return map;
 }
-function renderBarras(elId, map){
-  const wrap = $(elId); wrap.innerHTML="";
-  const max = Math.max(1, ...Object.values(map));
-  Object.entries(map).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>{
-    const row = document.createElement("div"); row.className="bar-row";
-    row.innerHTML = `<div class="bar-lbl"><span>${k}</span><span>${v}</span></div>
-      <div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(0)}%;"></div></div>`;
-    wrap.appendChild(row);
+function contarPorDia(lista){
+  const map = {};
+  lista.forEach(a=>{ const k=a.data||"—"; map[k]=(map[k]||0)+1; });
+  return Object.entries(map).sort((x,y)=> x[0]<y[0]?-1:1);
+}
+const CORES_GRAFICO = ["#1f7a3f","#2c5a86","#b9793f","#a9382f","#7a5c9e","#3a5233","#96622f","#5c8ca8"];
+function desenharPizza(canvasId, map){
+  const ctx = $(canvasId);
+  if(chartsAdmin[canvasId]){ chartsAdmin[canvasId].destroy(); chartsAdmin[canvasId]=null; }
+  const labels = Object.keys(map);
+  const data = Object.values(map);
+  if(!labels.length) return;
+  chartsAdmin[canvasId] = new Chart(ctx, {
+    type: "pie",
+    data: { labels, datasets: [{ data, backgroundColor: CORES_GRAFICO }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"right", labels:{boxWidth:12,font:{size:11}} } } }
   });
-  if(!Object.keys(map).length) wrap.innerHTML = `<p class="pending">Sem dados ainda.</p>`;
+}
+function desenharBarrasChart(canvasId, pares){
+  const ctx = $(canvasId);
+  if(chartsAdmin[canvasId]){ chartsAdmin[canvasId].destroy(); chartsAdmin[canvasId]=null; }
+  if(!pares.length) return;
+  chartsAdmin[canvasId] = new Chart(ctx, {
+    type: "bar",
+    data: { labels: pares.map(p=>p[0]), datasets: [{ label:"Animais", data: pares.map(p=>p[1]), backgroundColor:"#1f7a3f" }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ y:{beginAtZero:true} } }
+  });
+}
+function desenharGraficosAdmin(lista){
+  if(typeof Chart === "undefined") return;
+  desenharBarrasChart("chartPorDia", contarPorDia(lista));
+  desenharPizza("chartDestino", contarPor(lista,"destino"));
+  desenharPizza("chartRaca", contarPor(lista,"raca"));
+  desenharPizza("chartCategoria", contarPor(lista,"categoria"));
 }
 function iniciarFeedAdmin(){
   if(adminFeedUnsub) adminFeedUnsub();
@@ -1445,9 +1546,10 @@ function iniciarFeedAdmin(){
 }
 /* ordena por data e depois pela ordem do dia, e atribui um índice geral contínuo
    (1..N) pra exibição — sem repetir números entre dias diferentes, sem alterar o
-   campo "ord" real de cada lançamento (esse continua travado por dia) */
+   campo "ord" real de cada lançamento (esse continua travado por dia). Respeita os
+   filtros de retiro/período ativos na tela. */
 function listaOrdenadaComIndiceGeral(){
-  const lista = adminAnimaisCache.slice().sort((a,b)=>{
+  const lista = adminListaFiltrada().slice().sort((a,b)=>{
     const da = a.data||"", db_ = b.data||"";
     if(da !== db_) return da < db_ ? -1 : 1;
     return (Number(a.ord)||0) - (Number(b.ord)||0);
@@ -1461,9 +1563,61 @@ $("btnAdminExportExcel").onclick = ()=>{
   const ws = XLSX.utils.aoa_to_sheet(cab); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Todos"); XLSX.writeFile(wb, "Controle_Servico_Geral.xlsx");
 };
-$("btnAdminExportPDF").onclick = ()=>{
+/* Renderiza um gráfico (pizza ou barras) num canvas temporário fora da tela e devolve
+   a imagem em PNG — usado só na hora de montar o PDF, pra incluir os mesmos gráficos
+   que aparecem na tela (igual ao Audita Certo). */
+function gerarImagemGraficoAdmin(tipo, labels, data, titulo){
+  return new Promise((resolve)=>{
+    const W = 900, H = 560;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    canvas.style.position = "fixed"; canvas.style.left = "-99999px"; canvas.style.top = "0";
+    document.body.appendChild(canvas);
+    const cfg = tipo === "pie"
+      ? { type:"pie", data:{ labels, datasets:[{ data, backgroundColor: CORES_GRAFICO }] },
+          options:{ responsive:false, animation:false,
+            plugins:{ legend:{position:"right", labels:{font:{size:16}}}, title:{display:true,text:titulo,font:{size:22}} } } }
+      : { type:"bar", data:{ labels, datasets:[{ label:"Animais", data, backgroundColor:"#1f7a3f" }] },
+          options:{ responsive:false, animation:false,
+            plugins:{ legend:{display:false}, title:{display:true,text:titulo,font:{size:22}} },
+            scales:{ y:{beginAtZero:true, ticks:{font:{size:13}}}, x:{ticks:{font:{size:11}}} } } };
+    const tempChart = new Chart(canvas, cfg);
+    setTimeout(()=>{
+      const img = canvas.toDataURL("image/png", 1.0);
+      tempChart.destroy();
+      document.body.removeChild(canvas);
+      resolve({ img, ratio: W/H });
+    }, 80);
+  });
+}
+$("btnAdminExportPDF").onclick = async ()=>{
   const lista = listaOrdenadaComIndiceGeral();
   const { jsPDF } = window.jspdf; const doc = new jsPDF();
+
+  // páginas de gráficos primeiro, igual ao Audita Certo — só se tiver dados e Chart.js disponível
+  if(typeof Chart !== "undefined" && lista.length){
+    const porDia = contarPorDia(lista);
+    const porDestino = contarPor(lista, "destino");
+    const porRaca = contarPor(lista, "raca");
+    const porCategoria = contarPor(lista, "categoria");
+    const graficos = [
+      { tipo:"bar", titulo:"Animais por dia", labels:porDia.map(p=>p[0]), data:porDia.map(p=>p[1]) },
+      { tipo:"pie", titulo:"Por destino", labels:Object.keys(porDestino), data:Object.values(porDestino) },
+      { tipo:"pie", titulo:"Por raça", labels:Object.keys(porRaca), data:Object.values(porRaca) },
+      { tipo:"pie", titulo:"Por categoria", labels:Object.keys(porCategoria), data:Object.values(porCategoria) },
+    ];
+    let primeiraPagina = true;
+    for(const g of graficos){
+      if(!g.labels.length) continue;
+      const { img, ratio } = await gerarImagemGraficoAdmin(g.tipo, g.labels, g.data, g.titulo);
+      if(!primeiraPagina) doc.addPage(); else primeiraPagina = false;
+      let w = 180, h = w/ratio;
+      if(h > 150){ h = 150; w = h*ratio; }
+      doc.addImage(img, "PNG", (210-w)/2, 30, w, h);
+    }
+    if(!primeiraPagina) doc.addPage();
+  }
+
   const y = adicionarLogoCabecalho(doc, "CONTROLE DE SERVIÇO — GERAL", `${lista.length} animais auditados no total`);
   doc.autoTable({ startY:y, head:[["Nº Geral","Data","Controle","Raça","Categoria","Destino","@","Status","Auditor"]],
     body: lista.map(a=>[a.indiceGeral,a.data||"",a.controleNumero,a.raca,a.categoria||"",a.destino,a.carimbo,a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome]), styles:{fontSize:7} });
