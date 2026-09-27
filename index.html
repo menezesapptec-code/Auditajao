@@ -182,10 +182,22 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 
 <!-- ==================== AUDITOR: CONFINAMENTO (LINHA / LOTE / QUANTIDADE) ==================== -->
 <div id="viewConfinamento" class="container hidden">
+  <div class="card" id="cardOperacaoConf">
+    <h2>Operação de hoje</h2>
+    <div class="stat-mini"><span>Status</span><span id="opStatusLblConf">—</span></div>
+    <div class="stat-mini"><span>Início</span><span id="opInicioLblConf">—</span></div>
+    <div class="stat-mini hidden" id="opIntervaloRowConf"><span>Parou</span><span id="opIntervaloLblConf">—</span></div>
+    <div class="stat-mini hidden" id="opRetornoRowConf"><span>Retomou</span><span id="opRetornoLblConf">—</span></div>
+    <div class="stat-mini hidden" id="opTerminoRowConf"><span>Terminou</span><span id="opTerminoLblConf">—</span></div>
+    <button class="btn-secondary btn-block" id="btnPausarOperacaoConf" style="margin-top:10px;">⏸ Pausar operação</button>
+    <button class="btn-primary btn-block hidden" id="btnFinalizarOperacaoConf" style="margin-top:10px;">🏁 Finalizar operação</button>
+    <p id="opFinalizadaMsgConf" class="sub hidden" style="margin-top:8px;">✅ Operação finalizada — pode iniciar outra auditoria quando quiser.</p>
+  </div>
   <div class="card">
     <h2>Confinamento — Lançar linha</h2>
     <p class="sub">Uma linha por vez: registra e já limpa pra próxima.</p>
     <div class="grid">
+      <div><label>Raça</label><select id="cfRaca"></select></div>
       <div><label>Linha</label><input id="cfLinha" placeholder="Ex: Linha 3"></div>
       <div><label>Lote</label><input id="cfLote" placeholder="Ex: Lote 12"></div>
       <div><label>Quantidade total</label><input type="number" id="cfQuantidade" placeholder="Ex: 85" inputmode="numeric"></div>
@@ -810,6 +822,7 @@ $("iaConfirm").onclick = async ()=>{
   if(tipoAuditoriaAtual === "confinamento"){
     proximaOrdemDoDia = await calcularProximaOrdemParaData(data);
     showView("viewConfinamento");
+    renderOperacaoCard();
     renderLinhasConfinamento();
     setTimeout(()=>{ const el=$("cfLinha"); if(el) el.focus(); }, 30);
     return;
@@ -860,20 +873,30 @@ function somaAnimaisControle(){
 }
 
 /* ---- Confinamento: Linha / Lote / Quantidade, uma linha por vez ---- */
+function popularRacaConfinamento(){
+  const sel = $("cfRaca");
+  if(!sel) return;
+  const atual = sel.value;
+  sel.innerHTML = RACAS_OPCOES.map(r=>`<option value="${r}">${r}</option>`).join("");
+  if(atual && RACAS_OPCOES.includes(atual)) sel.value = atual;
+}
 function renderLinhasConfinamento(){
+  popularRacaConfinamento();
   const linhas = animaisAtual.filter(a=>a.tipoAuditoria==="confinamento");
   const wrap = $("listaLinhasConfinamento"); wrap.innerHTML = "";
   if(!linhas.length){ wrap.innerHTML = `<p class="pending">Nenhuma linha registrada ainda.</p>`; return; }
   linhas.forEach(l=>{
     const div = document.createElement("div"); div.className = "list-item";
-    div.innerHTML = `<div><div style="font-weight:600;">${l.linha} · ${l.lote}</div><div class="meta">${l.quantidade} animais</div></div>`;
+    div.innerHTML = `<div><div style="font-weight:600;">${l.linha} · ${l.lote} <span style="font-weight:400;color:var(--cinza);">· ${l.raca||"-"}</span></div><div class="meta">${l.quantidade} animais</div></div>`;
     wrap.appendChild(div);
   });
 }
 $("btnRegistrarLinha").onclick = ()=>{
+  const raca = $("cfRaca").value;
   const linha = $("cfLinha").value.trim();
   const lote = $("cfLote").value.trim();
   const quantidade = parseInt($("cfQuantidade").value, 10);
+  if(!raca){ alert("Selecione a raça."); return; }
   if(!linha){ alert("Informe a linha."); return; }
   if(!lote){ alert("Informe o lote."); return; }
   if(!quantidade || quantidade<=0){ alert("Informe a quantidade total de animais dessa linha."); return; }
@@ -882,8 +905,8 @@ $("btnRegistrarLinha").onclick = ()=>{
   const registro = {
     id: uid(), controleId: servicoAtual.id, controleNumero: servicoAtual.numero||servicoAtual.id, ord,
     data: servicoAtual.data, tipoAuditoria: "confinamento",
-    linha, lote, quantidade,
-    raca:"", categoria:"", origem:"", destino:"", carimbo:0, obs:"",
+    raca, linha, lote, quantidade,
+    categoria:"", origem:"", destino:"", carimbo:0, obs:"",
     status:"pendente", loteId:null, conferente1:null, conferente2:null, confAt:null,
     criadoPor: currentUser.uid, criadoPorNome: currentAuditorNome || currentUser.email,
     criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoEmLocal: Date.now()
@@ -1016,6 +1039,7 @@ async function abrirServico(id, novo=false){
   if(tipoAuditoriaAtual === "confinamento"){
     showView("viewConfinamento"); setNavActive("lista");
     $("topTitle").textContent = "Confinamento";
+    renderOperacaoCard();
     renderLinhasConfinamento();
     return;
   }
@@ -1052,29 +1076,41 @@ function horaAgoraHHMM(){
   const d = new Date();
   return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
 }
+/* Atualiza o card "Operação de hoje" — existe em duas telas (viewServico e
+   viewConfinamento, com ids "...Conf" na segunda), então atualiza as duas de uma vez;
+   pula silenciosamente o conjunto de ids que não existir na página. */
 function renderOperacaoCard(){
   if(!servicoAtual) return;
   const s = servicoAtual;
-  $("opInicioLbl").textContent = s.horaInicio || "—";
-  $("opIntervaloRow").classList.toggle("hidden", !s.intervalo);
-  $("opIntervaloLbl").textContent = s.intervalo || "—";
-  $("opRetornoRow").classList.toggle("hidden", !s.retorno);
-  $("opRetornoLbl").textContent = s.retorno || "—";
-  $("opTerminoRow").classList.toggle("hidden", !s.horaTermino);
-  $("opTerminoLbl").textContent = s.horaTermino || "—";
   const pausada = s.intervalo && !s.retorno && !s.horaTermino;
   const finalizada = !!s.horaTermino;
   let status = "🟢 Em andamento";
   if(finalizada) status = "🔒 Finalizada";
   else if(pausada) status = "⏸ Pausada";
-  $("opStatusLbl").textContent = status;
-  $("btnFinalizarOperacao").classList.toggle("hidden", finalizada);
-  $("opFinalizadaMsg").classList.toggle("hidden", !finalizada);
+
+  [
+    { inicio:"opInicioLbl", introw:"opIntervaloRow", intlbl:"opIntervaloLbl", retrow:"opRetornoRow", retlbl:"opRetornoLbl", termrow:"opTerminoRow", termlbl:"opTerminoLbl", statuslbl:"opStatusLbl", btnfin:"btnFinalizarOperacao", msgfin:"opFinalizadaMsg" },
+    { inicio:"opInicioLblConf", introw:"opIntervaloRowConf", intlbl:"opIntervaloLblConf", retrow:"opRetornoRowConf", retlbl:"opRetornoLblConf", termrow:"opTerminoRowConf", termlbl:"opTerminoLblConf", statuslbl:"opStatusLblConf", btnfin:"btnFinalizarOperacaoConf", msgfin:"opFinalizadaMsgConf" }
+  ].forEach(ids=>{
+    const elInicio = $(ids.inicio);
+    if(!elInicio) return; // esse conjunto de ids não existe nessa página — pula
+    elInicio.textContent = s.horaInicio || "—";
+    $(ids.introw).classList.toggle("hidden", !s.intervalo);
+    $(ids.intlbl).textContent = s.intervalo || "—";
+    $(ids.retrow).classList.toggle("hidden", !s.retorno);
+    $(ids.retlbl).textContent = s.retorno || "—";
+    $(ids.termrow).classList.toggle("hidden", !s.horaTermino);
+    $(ids.termlbl).textContent = s.horaTermino || "—";
+    $(ids.statuslbl).textContent = status;
+    $(ids.btnfin).classList.toggle("hidden", finalizada);
+    $(ids.msgfin).classList.toggle("hidden", !finalizada);
+  });
+  atualizarBotaoPausar();
 }
 /* Registra automaticamente o horário atual num campo da operação (intervalo/retorno/
    horaTermino), salva local + fila de sincronização, e atualiza a tela. Usado tanto pelo
-   botão Pausar/Retomar (dentro do assistente) quanto por Finalizar operação. Um segundo
-   campo (extra) pode ser gravado junto, como o motivo da pausa. */
+   botão Pausar/Retomar quanto por Finalizar operação. Um segundo campo (extra) pode ser
+   gravado junto, como o motivo da pausa. */
 function registrarHoraOperacao(campo, extra){
   const hora = horaAgoraHHMM();
   const dados = { [campo]: hora };
@@ -1089,49 +1125,59 @@ function registrarHoraOperacao(campo, extra){
   calcularResumo();
   return hora;
 }
-$("btnFinalizarOperacao").onclick = ()=>{
+function finalizarOperacao(){
   if(!confirm("Finalizar a operação de hoje? Registra o horário final agora — dá pra iniciar outra auditoria depois, normalmente no próximo dia.")) return;
   const hora = registrarHoraOperacao("horaTermino");
   alert(`✅ Operação finalizada às ${hora}.`);
-};
-/* Pausar/Retomar dentro do assistente: hora sempre automática (não digita nada). Pausar
-   pede o motivo (texto curto); retomar não pede nada — só a hora mesmo. */
-function wizOperacaoEstaPausada(){
+}
+$("btnFinalizarOperacao").onclick = finalizarOperacao;
+$("btnFinalizarOperacaoConf").onclick = finalizarOperacao;
+/* Pausar/Retomar: hora sempre automática (não digita nada). Pausar pede o motivo (texto
+   curto); retomar não pede nada — só a hora mesmo. Botão existe em duas telas (dentro do
+   assistente e na tela de Confinamento) — atualiza as duas juntas. */
+function operacaoEstaPausada(){
   return !!(servicoAtual && servicoAtual.intervalo && !servicoAtual.retorno);
 }
-function atualizarBotaoPausarWiz(){
-  const btn = $("btnPausarOperacaoWiz");
-  const banner = $("wizPausadoBanner");
-  if(!servicoAtual){ btn.classList.add("hidden"); return; }
-  btn.classList.remove("hidden");
-  if(wizOperacaoEstaPausada()){
-    btn.textContent = "▶ Retomar operação";
-    const motivo = servicoAtual.motivoPausa ? ` — ${servicoAtual.motivoPausa}` : "";
-    banner.textContent = `⏸ Operação pausada às ${servicoAtual.intervalo}${motivo} — toque em "Retomar operação" pra continuar.`;
-    banner.classList.remove("hidden");
-  } else {
-    btn.textContent = "⏸ Pausar operação";
-    banner.classList.add("hidden");
-  }
+function atualizarBotaoPausar(){
+  const pausada = operacaoEstaPausada();
+  [
+    { btn:"btnPausarOperacaoWiz", banner:"wizPausadoBanner" },
+    { btn:"btnPausarOperacaoConf", banner:null }
+  ].forEach(ids=>{
+    const btn = $(ids.btn);
+    if(!btn || !servicoAtual) return;
+    btn.classList.remove("hidden");
+    btn.textContent = pausada ? "▶ Retomar operação" : "⏸ Pausar operação";
+    if(ids.banner){
+      const banner = $(ids.banner);
+      if(pausada){
+        const motivo = servicoAtual.motivoPausa ? ` — ${servicoAtual.motivoPausa}` : "";
+        banner.textContent = `⏸ Operação pausada às ${servicoAtual.intervalo}${motivo} — toque em "Retomar operação" pra continuar.`;
+        banner.classList.remove("hidden");
+      } else {
+        banner.classList.add("hidden");
+      }
+    }
+  });
 }
-$("btnPausarOperacaoWiz").onclick = ()=>{
-  if(wizOperacaoEstaPausada()){
+function acaoPausarOuRetomar(){
+  if(operacaoEstaPausada()){
     const hora = registrarHoraOperacao("retorno");
-    atualizarBotaoPausarWiz();
     alert(`▶ Operação retomada às ${hora}.`);
   } else {
     $("inMotivoPausa").value = "";
     $("modalMotivoPausa").classList.remove("hidden");
     setTimeout(()=>{ const el=$("inMotivoPausa"); if(el) el.focus(); }, 30);
   }
-};
+}
+$("btnPausarOperacaoWiz").onclick = acaoPausarOuRetomar;
+$("btnPausarOperacaoConf").onclick = acaoPausarOuRetomar;
 $("motivoPausaCancel").onclick = ()=> $("modalMotivoPausa").classList.add("hidden");
 $("motivoPausaConfirm").onclick = ()=>{
   const motivo = $("inMotivoPausa").value.trim();
   if(!motivo){ alert("Descreve rapidinho o motivo da pausa."); return; }
   $("modalMotivoPausa").classList.add("hidden");
   const hora = registrarHoraOperacao("intervalo", { motivoPausa: motivo });
-  atualizarBotaoPausarWiz();
   alert(`⏸ Operação pausada às ${hora} — ${motivo}.`);
 };
 
@@ -1223,8 +1269,8 @@ $("btnAbrirWizardAnimal").onclick = ()=>{
 };
 $("btnWizBack").onclick = ()=>{
   if(wizIdx>0){ wizIdx--; wizErr=""; renderWiz(); return; }
-  if(animaisAtual.length>0){ showView("viewServico"); return; }
-  if(confirm("Cancelar esse lançamento? Os dados dessa etapa serão perdidos.")){ showView("viewServico"); }
+  if(animaisAtual.length>0){ abrirServico(servicoAtual.id, true); return; }
+  if(confirm("Cancelar esse lançamento? Os dados dessa etapa serão perdidos.")){ abrirServico(servicoAtual.id, true); }
 };
 $("btnWizNext").onclick = ()=>{
   const step = WIZ_STEPS[wizIdx];
@@ -1256,7 +1302,7 @@ function renderWiz(){
   bindWizStep(step.key);
   $("btnWizBack").textContent = wizIdx>0 ? "Voltar" : (animaisAtual.length>0 ? "✕ Fechar" : "Cancelar");
   $("btnWizNext").textContent = step.key==="revisar" ? "✅ Confirmar lançamento" : "Confirmar e avançar";
-  atualizarBotaoPausarWiz();
+  atualizarBotaoPausar();
 }
 function renderWizStep(key){
   const ordAtual = proximaOrdemDoDia;
