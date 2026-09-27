@@ -406,6 +406,11 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
       <h2>Por categoria</h2>
       <div class="chart-box"><canvas id="chartCategoria"></canvas></div>
     </div>
+    <div class="card">
+      <h2>Por tipo de operação</h2>
+      <p class="sub" style="margin-top:-6px;">Curral, Aleijados, Enfermaria e Confinamento — todos somados no total geral acima.</p>
+      <div class="chart-box"><canvas id="chartTipoAuditoria"></canvas></div>
+    </div>
 
     <div class="card">
       <h2>Atividade em tempo real</h2>
@@ -1533,12 +1538,12 @@ function renderTabela(){
 }
 function horaParaMin(h){ if(!h) return null; const [hh,mm]=h.split(":").map(Number); return hh*60+mm; }
 function calcularResumo(){
-  const total = animaisAtual.length, arrobas = somaArrobas();
-  const conf = animaisAtual.filter(a=>a.destino==="Confinamento").length;
-  const recria = animaisAtual.filter(a=>a.destino==="Recria").length;
-  const refugo = animaisAtual.filter(a=>a.destino==="Refugo").length;
+  const total = somaAnimaisControle(), arrobas = somaArrobas();
+  const conf = animaisAtual.filter(a=>a.destino==="Confinamento").reduce((t,a)=>t+qtdAnimal(a),0);
+  const recria = animaisAtual.filter(a=>a.destino==="Recria").reduce((t,a)=>t+qtdAnimal(a),0);
+  const refugo = animaisAtual.filter(a=>a.destino==="Refugo").reduce((t,a)=>t+qtdAnimal(a),0);
   const outro = total-conf-recria-refugo;
-  const pend = animaisAtual.filter(a=>a.status==="pendente").length;
+  const pend = animaisAtual.filter(a=>a.status==="pendente").reduce((t,a)=>t+qtdAnimal(a),0);
   $("cTotal").textContent=total; $("cArrobas").textContent=arrobas.toFixed(1);
   $("cConf").textContent=conf; $("cRecria").textContent=recria; $("cRefugo").textContent=refugo; $("cOutro").textContent=outro;
   $("cPendentes").textContent=pend;
@@ -1857,8 +1862,8 @@ function adminListaFiltrada(){
 }
 function aplicarFiltrosAdmin(){
   const lista = adminListaFiltrada();
-  const total = lista.length;
-  const pend = lista.filter(a=>a.status==="pendente").length;
+  const total = lista.reduce((t,a)=>t+qtdAnimal(a),0);
+  const pend = lista.filter(a=>a.status==="pendente").reduce((t,a)=>t+qtdAnimal(a),0);
   const arrobas = lista.reduce((t,a)=>t+(parseFloat(a.carimbo)||0),0);
   const lotes = new Set(lista.filter(a=>a.loteId).map(a=>a.loteId)).size;
   $("aTotal").textContent=total; $("aPendente").textContent=pend; $("aArrobas").textContent=arrobas.toFixed(1); $("aLotes").textContent=lotes;
@@ -1873,14 +1878,26 @@ $("btnLimparFiltrosAdmin").onclick = ()=>{
   renderRetiroChecklist(retirosUnicos);
   aplicarFiltrosAdmin();
 };
+/* Soma pela quantidade real de animais — uma linha de confinamento com quantidade:10
+   entra como 10, não como 1 registro. Usada em todas as contagens/gráficos do admin,
+   pra somar certinho com o resto (curral, aleijados, enfermaria) no total geral. */
 function contarPor(lista, campo){
   const map = {};
-  lista.forEach(a=>{ const k=a[campo]||"—"; map[k]=(map[k]||0)+1; });
+  lista.forEach(a=>{ const k=a[campo]||"—"; map[k]=(map[k]||0)+qtdAnimal(a); });
+  return map;
+}
+function contarPorTipoAuditoria(lista){
+  const map = {};
+  lista.forEach(a=>{
+    const tipo = a.tipoAuditoria || "curral";
+    const rotulo = (ROTULO_TIPO_AUDITORIA[tipo]||tipo).replace(/^\S+\s/,"");
+    map[rotulo] = (map[rotulo]||0) + qtdAnimal(a);
+  });
   return map;
 }
 function contarPorDia(lista){
   const map = {};
-  lista.forEach(a=>{ const k=a.data||"—"; map[k]=(map[k]||0)+1; });
+  lista.forEach(a=>{ const k=a.data||"—"; map[k]=(map[k]||0)+qtdAnimal(a); });
   return Object.entries(map).sort((x,y)=> x[0]<y[0]?-1:1);
 }
 const CORES_GRAFICO = ["#1f7a3f","#2c5a86","#b9793f","#a9382f","#7a5c9e","#3a5233","#96622f","#5c8ca8"];
@@ -1912,6 +1929,7 @@ function desenharGraficosAdmin(lista){
   desenharPizza("chartDestino", contarPor(lista,"destino"));
   desenharPizza("chartRaca", contarPor(lista,"raca"));
   desenharPizza("chartCategoria", contarPor(lista,"categoria"));
+  desenharPizza("chartTipoAuditoria", contarPorTipoAuditoria(lista));
 }
 function iniciarFeedAdmin(){
   if(adminFeedUnsub) adminFeedUnsub();
@@ -2367,11 +2385,14 @@ $("btnAdminExportPDF").onclick = async ()=>{
     const porDestino = contarPor(lista, "destino");
     const porRaca = contarPor(lista, "raca");
     const porCategoria = contarPor(lista, "categoria");
+    const porTipo = contarPorTipoAuditoria(lista);
     const specs = [
       { titulo:"Animais por dia", rotuloContagem:"DIAS", labels:porDia.map(p=>p[0].split("-").reverse().join("/")), data:porDia.map(p=>p[1]) },
       { titulo:"Por destino", rotuloContagem:"DESTINOS", labels:Object.keys(porDestino), data:Object.values(porDestino) },
       { titulo:"Por raça", rotuloContagem:"RAÇAS", labels:Object.keys(porRaca), data:Object.values(porRaca) },
       { titulo:"Por categoria", rotuloContagem:"CATEGORIAS", labels:Object.keys(porCategoria), data:Object.values(porCategoria) },
+      { titulo:"Por tipo de operação", rotuloContagem:"TIPOS", labels:Object.keys(porTipo), data:Object.values(porTipo),
+        observacao:"Curral, Aleijados, Enfermaria e Confinamento — cada linha de Confinamento conta pela quantidade total informada, não como 1 lançamento. Todos somados juntos no total geral." },
     ];
     for(let i=0; i<specs.length; i++){
       if(i>0) doc.addPage("a4","landscape");
