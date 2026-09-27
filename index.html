@@ -82,6 +82,9 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 .stat-mini{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px dashed var(--borda);}
 .chart-box{position:relative;height:220px;}
 .chart-box canvas{max-width:100%;}
+.live-badge{display:inline-block;font-size:11px;font-weight:700;color:#1f7a3f;margin-left:6px;}
+.ativo-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px dashed var(--borda);font-size:13.5px;}
+.ativo-row:last-child{border-bottom:none;}
 .bar-row{margin-bottom:8px;}
 .bar-row .bar-lbl{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;}
 .bar-track{background:var(--cinza-claro);border-radius:6px;height:10px;overflow:hidden;}
@@ -158,6 +161,58 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   </div>
   <div class="fab-add">
     <button class="btn-primary btn-block" id="btnNovoServico" style="padding:16px;font-size:16px;">▶ Iniciar auditoria</button>
+    <button class="btn-secondary btn-block" id="btnForaCurral" style="padding:14px;font-size:15px;margin-top:8px;">📍 Iniciar auditoria fora do curral</button>
+  </div>
+</div>
+
+<!-- ==================== AUDITOR: FORA DO CURRAL (ALEIJADOS / ENFERMARIA / CONFINAMENTO) ==================== -->
+<div id="viewForaCurral" class="container hidden">
+  <div class="card">
+    <h2>Auditoria fora do curral</h2>
+    <p class="sub">Escolha o tipo de operação que vai fazer agora.</p>
+    <div class="opt-grid">
+      <div class="opt-card" id="optModoAleijados"><span><span class="opt-num">1</span>🩼 Aleijados</span></div>
+      <div class="opt-card" id="optModoEnfermaria"><span><span class="opt-num">2</span>🏥 Enfermaria</span></div>
+      <div class="opt-card" id="optModoConfinamento"><span><span class="opt-num">3</span>🌾 Confinamento</span></div>
+    </div>
+    <p class="sub" id="descModoForaCurral" style="margin-top:10px;"></p>
+    <button class="btn-secondary btn-block" id="btnVoltarForaCurral" style="margin-top:14px;">← Voltar</button>
+  </div>
+</div>
+
+<!-- ==================== AUDITOR: CONFINAMENTO (LINHA / LOTE / QUANTIDADE) ==================== -->
+<div id="viewConfinamento" class="container hidden">
+  <div class="card">
+    <h2>Confinamento — Lançar linha</h2>
+    <p class="sub">Uma linha por vez: registra e já limpa pra próxima.</p>
+    <div class="grid">
+      <div><label>Linha</label><input id="cfLinha" placeholder="Ex: Linha 3"></div>
+      <div><label>Lote</label><input id="cfLote" placeholder="Ex: Lote 12"></div>
+      <div><label>Quantidade total</label><input type="number" id="cfQuantidade" placeholder="Ex: 85" inputmode="numeric"></div>
+    </div>
+    <button class="btn-primary btn-block" id="btnRegistrarLinha" style="margin-top:10px;padding:14px;">✅ Registrar linha e ir pra próxima</button>
+  </div>
+  <div class="card">
+    <h2>Linhas registradas nesse controle</h2>
+    <div id="listaLinhasConfinamento"></div>
+  </div>
+  <button class="btn-secondary btn-block" id="btnVoltarConfinamento" style="margin:0 16px 16px;">← Voltar pra lista</button>
+</div>
+
+<!-- ==================== AUDITOR: FOTO + LOCALIZAÇÃO (só no modo Aleijados) ==================== -->
+<div id="viewFotoLocal" class="container hidden">
+  <div class="card">
+    <h2>📍 Local do animal</h2>
+    <p class="sub" id="fotoLocalAnimalLbl">—</p>
+    <button class="btn-secondary btn-block" id="btnCapturarLocal">📍 Capturar localização</button>
+    <p class="sub" id="localCapturadoLbl" style="margin-top:8px;"></p>
+    <button class="btn-secondary btn-block" id="btnAbrirCamera" style="margin-top:14px;">📷 Tirar foto</button>
+    <input type="file" accept="image/*" capture="environment" id="inputFotoCapture" class="hidden">
+    <img id="previewFoto" class="hidden" style="max-width:100%;border-radius:8px;margin-top:10px;">
+    <div class="btn-row" style="margin-top:16px;">
+      <button class="btn-secondary" id="btnPularFotoLocal">Pular</button>
+      <button class="btn-primary" id="btnSalvarFotoLocal">✅ Salvar e continuar</button>
+    </div>
   </div>
 </div>
 
@@ -292,8 +347,9 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 <!-- ==================== ADMIN ==================== -->
 <div id="viewAdmin" class="container hidden">
   <div class="card">
-    <div class="btn-row" style="margin-bottom:4px;">
+    <div class="btn-row" style="margin-bottom:4px;flex-wrap:wrap;">
       <button class="btn-secondary sub-tab active" id="atab-visao">Visão geral</button>
+      <button class="btn-secondary sub-tab" id="atab-monitoramento">Monitoramento</button>
       <button class="btn-secondary sub-tab" id="atab-auditores">Auditores</button>
     </div>
   </div>
@@ -349,6 +405,55 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
       <p class="sub">Corrige um registro direto por aqui, mesmo já conferido.</p>
       <input id="adminEditSearch" placeholder="Buscar por Nº do controle ou Ord...">
       <div id="adminEditResults" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <div id="adminMonitoramentoView" class="hidden">
+    <div class="card">
+      <h2>Resumo geral <span class="live-badge">● ao vivo</span></h2>
+      <div class="counters">
+        <div class="counter-box"><div class="num" id="monTotal">0</div><div class="lbl">Total de Animais</div></div>
+        <div class="counter-box"><div class="num" id="monArrobas">0</div><div class="lbl">Total @</div></div>
+        <div class="counter-box"><div class="num" id="monAuditores">0</div><div class="lbl">Auditores ativos</div></div>
+        <div class="counter-box"><div class="num" id="monMediaHora">0</div><div class="lbl">Média Animais/Hora</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🟢 Ativos agora</h2>
+      <p class="sub">Auditores com lançamento nos últimos 30 minutos.</p>
+      <div id="monAtivosAgora"></div>
+    </div>
+
+    <div class="card">
+      <h2>Rendimento por auditor</h2>
+      <div class="chart-box"><canvas id="chartPorAuditor"></canvas></div>
+      <div class="table-wrap" style="margin-top:10px;">
+        <table>
+          <thead><tr><th>Auditor</th><th>Animais</th><th>@</th><th>Animais/Hora</th><th>Retiros</th></tr></thead>
+          <tbody id="tabelaPorAuditor"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Rendimento por retiro</h2>
+      <div class="chart-box"><canvas id="chartPorRetiroMon"></canvas></div>
+      <div class="table-wrap" style="margin-top:10px;">
+        <table>
+          <thead><tr><th>Retiro</th><th>Animais</th><th>@</th><th>Controles</th></tr></thead>
+          <tbody id="tabelaPorRetiroMon"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Rendimento diário (últimos 14 dias)</h2>
+      <div class="chart-box"><canvas id="chartRendimentoDiario"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Rendimento semanal (últimas 8 semanas)</h2>
+      <div class="chart-box"><canvas id="chartRendimentoSemanal"></canvas></div>
     </div>
   </div>
 
@@ -412,6 +517,20 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   </div>
 </div>
 
+<!-- MODAL: MOTIVO DA PAUSA -->
+<div id="modalMotivoPausa" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:65;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div class="card" style="max-width:380px;width:100%;">
+    <h2>⏸ Pausar operação</h2>
+    <p class="sub">A hora é registrada automaticamente — só descreve o motivo.</p>
+    <label>Motivo da pausa</label>
+    <input id="inMotivoPausa" placeholder="Ex: Almoço, chuva, problema técnico...">
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn-secondary" id="motivoPausaCancel">Cancelar</button>
+      <button class="btn-primary" id="motivoPausaConfirm">Confirmar pausa</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: EDITAR DESTINO (conferido) -->
 <div id="modalEditDestino" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;">
   <div class="card" style="max-width:400px;width:100%;">
@@ -432,7 +551,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <h2>Editar lançamento</h2>
     <div class="grid">
       <div><label>Raça</label>
-        <select id="aeRaca"><option>Nelore</option><option>Cruzado</option><option>Angus</option><option>Girolando</option><option>Outro</option></select>
+        <select id="aeRaca"></select>
       </div>
       <div><label>Categoria</label>
         <select id="aeCategoria"></select>
@@ -484,6 +603,7 @@ let servicosCache = [];      // lista de controles do usuário
 let filaOffline = [];
 let adminFeedUnsub = null;
 let proximaOrdemDoDia = 1;   // trava a Ordem pela sequência do DIA (todos os controles), não por controle
+let tipoAuditoriaAtual = "curral"; // "curral" | "aleijados" | "enfermaria" | "confinamento"
 const FILA_KEY = "cs_fila_offline";
 const CACHE_KEY = "cs_servicos_cache";
 
@@ -522,9 +642,10 @@ function salvarCacheServicos(){ localStorage.setItem(CACHE_KEY, JSON.stringify(s
 function carregarCacheServicos(){ servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]"); }
 
 function showView(view){
-  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewConfig","viewAdmin"].forEach(v=>$(v).classList.add("hidden"));
+  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewConfig","viewAdmin","viewForaCurral","viewConfinamento","viewFotoLocal"].forEach(v=>$(v).classList.add("hidden"));
   $(view).classList.remove("hidden");
-  $("navAuditor").classList.toggle("hidden", isAdmin || view==="viewLogin" || view==="viewWizardAnimal");
+  const semNav = ["viewLogin","viewWizardAnimal","viewForaCurral","viewConfinamento","viewFotoLocal"].includes(view);
+  $("navAuditor").classList.toggle("hidden", isAdmin || semNav);
 }
 function setNavActive(target){
   document.querySelectorAll("#navAuditor button").forEach(b=> b.classList.toggle("active", b.dataset.target===target));
@@ -629,14 +750,16 @@ async function abrirLista(){
     }catch(e){ console.error(e); }
   }
 }
+const ROTULO_TIPO_AUDITORIA = { curral:"🐂 Curral", aleijados:"🩼 Aleijados", enfermaria:"🏥 Enfermaria", confinamento:"🌾 Confinamento" };
 function renderLista(lista){
   const el = $("listaServicos"); el.innerHTML = "";
   $("listaVazia").classList.toggle("hidden", lista.length>0);
   lista.forEach(s=>{
     const div = document.createElement("div");
     div.className = "list-item";
+    const rotuloTipo = ROTULO_TIPO_AUDITORIA[s.tipoAuditoria||"curral"];
     div.innerHTML = `<div>
-        <div style="font-weight:600;">Nº ${s.numero||"-"} — ${s.data||""}</div>
+        <div style="font-weight:600;">Nº ${s.numero||"-"} — ${s.data||""} <span style="font-weight:400;font-size:12px;color:var(--cinza);">· ${rotuloTipo}</span></div>
         <div class="meta">Vet: ${s.vetResponsavel||"-"} · ${s.totalAnimais||0} animais</div>
       </div><div>›</div>`;
     div.onclick = ()=> abrirServico(s.id);
@@ -644,6 +767,7 @@ function renderLista(lista){
   });
 }
 $("btnNovoServico").onclick = ()=>{
+  tipoAuditoriaAtual = "curral";
   $("iaNumero").value = String(configCache.proximoNumeroControle||1).padStart(3,"0");
   $("iaData").value = new Date().toISOString().slice(0,10);
   $("modalIniciarAuditoria").classList.remove("hidden");
@@ -658,7 +782,7 @@ $("iaConfirm").onclick = async ()=>{
 
   const id = uid();
   const dados = {
-    numero, data,
+    numero, data, tipoAuditoria: tipoAuditoriaAtual,
     fazenda:"", retiro:"",
     vetResponsavel:"", responsavel:"",
     horaInicio: horaAgoraHHMM(), intervalo:"", retorno:"", horaTermino:"",
@@ -683,6 +807,14 @@ $("iaConfirm").onclick = async ()=>{
   localStorage.setItem("animais_"+id, JSON.stringify(animaisAtual));
   $("origensList").innerHTML = "";
 
+  if(tipoAuditoriaAtual === "confinamento"){
+    proximaOrdemDoDia = await calcularProximaOrdemParaData(data);
+    showView("viewConfinamento");
+    renderLinhasConfinamento();
+    setTimeout(()=>{ const el=$("cfLinha"); if(el) el.focus(); }, 30);
+    return;
+  }
+
   // ordem do dia é travada: sempre continua de onde parou nesse mesmo dia, mesmo que
   // seja um novo Controle de Serviço — nunca reinicia em 1 só porque abriu um controle novo
   proximaOrdemDoDia = await calcularProximaOrdemParaData(data);
@@ -694,30 +826,204 @@ $("iaConfirm").onclick = async ()=>{
 };
 $("btnVoltarLista").onclick = abrirLista;
 
+/* ================= FORA DO CURRAL (ALEIJADOS / ENFERMARIA / CONFINAMENTO) =================
+   Reaproveita o MESMO modal "Iniciar auditoria" (Número + Data) pra criar o controle — só
+   muda o tipoAuditoriaAtual antes de abrir, e o que acontece depois de criar o controle
+   (ver dentro do $("iaConfirm").onclick, lá em cima). */
+$("btnForaCurral").onclick = ()=>{ showView("viewForaCurral"); };
+$("btnVoltarForaCurral").onclick = ()=>{ showView("viewLista"); abrirLista(); };
+const DESC_MODO_FORA_CURRAL = {
+  aleijados: "Mesmo processo da auditoria normal, mas pede foto e localização de cada animal — funciona melhor no celular, direto no campo.",
+  enfermaria: "Segue exatamente as mesmas etapas da auditoria normal (Raça, Categoria, Origem, Destino, Carimbo, Obs).",
+  confinamento: "Mais rápido: registra Linha, Lote e Quantidade total — uma linha por vez, sem etapas por animal."
+};
+function iniciarModoForaCurral(modo){
+  tipoAuditoriaAtual = modo;
+  $("iaNumero").value = String(configCache.proximoNumeroControle||1).padStart(3,"0");
+  $("iaData").value = new Date().toISOString().slice(0,10);
+  $("modalIniciarAuditoria").classList.remove("hidden");
+  setTimeout(()=>{ const el=$("iaNumero"); if(el) el.focus(); }, 30);
+}
+$("optModoAleijados").onclick = ()=> iniciarModoForaCurral("aleijados");
+$("optModoEnfermaria").onclick = ()=> iniciarModoForaCurral("enfermaria");
+$("optModoConfinamento").onclick = ()=> iniciarModoForaCurral("confinamento");
+["optModoAleijados","optModoEnfermaria","optModoConfinamento"].forEach((id,i)=>{
+  const modo = ["aleijados","enfermaria","confinamento"][i];
+  $(id).addEventListener("mouseenter", ()=> $("descModoForaCurral").textContent = DESC_MODO_FORA_CURRAL[modo]);
+  $(id).addEventListener("click", ()=> $("descModoForaCurral").textContent = DESC_MODO_FORA_CURRAL[modo]);
+});
+
+/* soma de animais do controle: cada linha de confinamento vale pela QUANTIDADE informada,
+   os outros tipos (curral/aleijados/enfermaria) contam 1 registro = 1 animal, como sempre */
+function somaAnimaisControle(){
+  return animaisAtual.reduce((t,a)=> t + (a.tipoAuditoria==="confinamento" ? (Number(a.quantidade)||0) : 1), 0);
+}
+
+/* ---- Confinamento: Linha / Lote / Quantidade, uma linha por vez ---- */
+function renderLinhasConfinamento(){
+  const linhas = animaisAtual.filter(a=>a.tipoAuditoria==="confinamento");
+  const wrap = $("listaLinhasConfinamento"); wrap.innerHTML = "";
+  if(!linhas.length){ wrap.innerHTML = `<p class="pending">Nenhuma linha registrada ainda.</p>`; return; }
+  linhas.forEach(l=>{
+    const div = document.createElement("div"); div.className = "list-item";
+    div.innerHTML = `<div><div style="font-weight:600;">${l.linha} · ${l.lote}</div><div class="meta">${l.quantidade} animais</div></div>`;
+    wrap.appendChild(div);
+  });
+}
+$("btnRegistrarLinha").onclick = ()=>{
+  const linha = $("cfLinha").value.trim();
+  const lote = $("cfLote").value.trim();
+  const quantidade = parseInt($("cfQuantidade").value, 10);
+  if(!linha){ alert("Informe a linha."); return; }
+  if(!lote){ alert("Informe o lote."); return; }
+  if(!quantidade || quantidade<=0){ alert("Informe a quantidade total de animais dessa linha."); return; }
+
+  const ord = proximaOrdemDoDia;
+  const registro = {
+    id: uid(), controleId: servicoAtual.id, controleNumero: servicoAtual.numero||servicoAtual.id, ord,
+    data: servicoAtual.data, tipoAuditoria: "confinamento",
+    linha, lote, quantidade,
+    raca:"", categoria:"", origem:"", destino:"", carimbo:0, obs:"",
+    status:"pendente", loteId:null, conferente1:null, conferente2:null, confAt:null,
+    criadoPor: currentUser.uid, criadoPorNome: currentAuditorNome || currentUser.email,
+    criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoEmLocal: Date.now()
+  };
+  animaisAtual.push(registro);
+  proximaOrdemDoDia++;
+  localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+  filaOffline.push({tipo:"novoAnimal", id:registro.id, dados:registro});
+  salvarFilaLocal();
+
+  const totais = { totalAnimais: somaAnimaisControle(), totalArrobas: somaArrobas() };
+  Object.assign(servicoAtual, totais);
+  const idxS = servicosCache.findIndex(s=>s.id===servicoAtual.id);
+  if(idxS>=0) Object.assign(servicosCache[idxS], totais);
+  salvarCacheServicos();
+  filaOffline.push({tipo:"updServico", id:servicoAtual.id, dados:totais});
+  salvarFilaLocal(); processarFila();
+
+  $("cfLinha").value=""; $("cfLote").value=""; $("cfQuantidade").value="";
+  renderLinhasConfinamento();
+  setTimeout(()=>{ const el=$("cfLinha"); if(el) el.focus(); }, 30);
+};
+$("btnVoltarConfinamento").onclick = ()=>{ showView("viewLista"); abrirLista(); };
+
+/* ---- Aleijados: depois de salvar o animal (etapas normais), pede foto + localização ----
+   Requer permissão do navegador pra GPS e câmera — funciona melhor em celular, testado nos
+   padrões web (Geolocation API + <input capture="environment">), mas o comportamento exato
+   de permissão varia por aparelho/navegador. */
+let animalAleijadoAtual = null;
+let localCapturado = null;
+let fotoBase64Capturada = null;
+function abrirCapturaFotoLocal(animal){
+  animalAleijadoAtual = animal;
+  localCapturado = null;
+  fotoBase64Capturada = null;
+  $("fotoLocalAnimalLbl").textContent = `Ord. ${animal.ord} · ${animal.raca} · ${animal.categoria}`;
+  $("localCapturadoLbl").textContent = "";
+  $("previewFoto").classList.add("hidden");
+  $("previewFoto").src = "";
+  showView("viewFotoLocal");
+}
+$("btnCapturarLocal").onclick = ()=>{
+  if(!navigator.geolocation){ $("localCapturadoLbl").textContent = "⚠ Esse navegador não suporta localização."; return; }
+  $("localCapturadoLbl").textContent = "📡 Capturando localização...";
+  navigator.geolocation.getCurrentPosition(
+    (pos)=>{
+      localCapturado = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      $("localCapturadoLbl").textContent = `📍 Localização capturada: ${localCapturado.lat.toFixed(6)}, ${localCapturado.lng.toFixed(6)}`;
+    },
+    (err)=>{
+      $("localCapturadoLbl").textContent = "⚠ Não foi possível capturar a localização — confere se o app tem permissão de GPS.";
+      console.error("Erro de geolocalização:", err);
+    },
+    { enableHighAccuracy:true, timeout:10000 }
+  );
+};
+$("btnAbrirCamera").onclick = ()=> $("inputFotoCapture").click();
+$("inputFotoCapture").addEventListener("change", (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      // reduz a foto (máx. 800px no maior lado) antes de guardar, pra caber tranquilo
+      // dentro do limite de 1MB por documento do Firestore
+      const maxDim = 800;
+      let w = img.width, h = img.height;
+      if(w > maxDim || h > maxDim){
+        if(w >= h){ h = Math.round(h*(maxDim/w)); w = maxDim; }
+        else { w = Math.round(w*(maxDim/h)); h = maxDim; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      fotoBase64Capturada = canvas.toDataURL("image/jpeg", 0.7);
+      $("previewFoto").src = fotoBase64Capturada;
+      $("previewFoto").classList.remove("hidden");
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+$("btnPularFotoLocal").onclick = ()=>{
+  animalAleijadoAtual = null;
+  novoWizardAnimal();
+  showView("viewWizardAnimal");
+  renderWiz();
+};
+$("btnSalvarFotoLocal").onclick = ()=>{
+  if(!animalAleijadoAtual){ novoWizardAnimal(); showView("viewWizardAnimal"); renderWiz(); return; }
+  const dados = {};
+  if(localCapturado){ dados.geoLat = localCapturado.lat; dados.geoLng = localCapturado.lng; }
+  if(fotoBase64Capturada){ dados.foto = fotoBase64Capturada; }
+  if(Object.keys(dados).length){
+    const idx = animaisAtual.findIndex(a=>a.id===animalAleijadoAtual.id);
+    if(idx>=0){
+      Object.assign(animaisAtual[idx], dados);
+      localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+    }
+    filaOffline.push({tipo:"updAnimal", id:animalAleijadoAtual.id, dados});
+    salvarFilaLocal(); processarFila();
+  }
+  animalAleijadoAtual = null;
+  novoWizardAnimal();
+  showView("viewWizardAnimal");
+  renderWiz();
+};
+
 /* ================= DETALHE / LANÇAMENTO ================= */
 async function abrirServico(id, novo=false){
-  showView("viewServico"); setNavActive("lista");
-  $("topTitle").textContent = "Lançamento";
   servicoAtual = servicosCache.find(s=>s.id===id) || {id};
-  preencherFormServico(servicoAtual);
-  renderOperacaoCard();
   animaisAtual = JSON.parse(localStorage.getItem("animais_"+id) || "[]");
-  renderTabela();
   if(!novo && navigator.onLine){
     try{
       const doc = await db.collection("controles").doc(id).get();
-      if(doc.exists){ servicoAtual = {id, ...doc.data()}; preencherFormServico(servicoAtual); renderOperacaoCard(); }
+      if(doc.exists){ servicoAtual = {id, ...doc.data()}; }
       const snap = await db.collection("animais").where("controleId","==",id).orderBy("ord").get();
       animaisAtual = snap.docs.map(d=>({id:d.id, ...d.data()}));
       localStorage.setItem("animais_"+id, JSON.stringify(animaisAtual));
-      renderTabela();
     }catch(e){ console.error(e); }
   }
+  tipoAuditoriaAtual = servicoAtual.tipoAuditoria || "curral";
   if(!novo){
     proximaOrdemDoDia = await calcularProximaOrdemParaData(servicoAtual.data);
   }
   const origens = [...new Set(animaisAtual.map(a=>a.origem).filter(Boolean))];
   $("origensList").innerHTML = origens.map(o=>`<option value="${o}">`).join("");
+
+  if(tipoAuditoriaAtual === "confinamento"){
+    showView("viewConfinamento"); setNavActive("lista");
+    $("topTitle").textContent = "Confinamento";
+    renderLinhasConfinamento();
+    return;
+  }
+  showView("viewServico"); setNavActive("lista");
+  $("topTitle").textContent = "Lançamento";
+  preencherFormServico(servicoAtual);
+  renderOperacaoCard();
+  renderTabela();
 }
 function preencherFormServico(s){
   $("fNumero").value=s.numero||""; $("fData").value=s.data||"";
@@ -767,14 +1073,17 @@ function renderOperacaoCard(){
 }
 /* Registra automaticamente o horário atual num campo da operação (intervalo/retorno/
    horaTermino), salva local + fila de sincronização, e atualiza a tela. Usado tanto pelo
-   botão Pausar/Retomar (dentro do assistente) quanto por Finalizar operação. */
-function registrarHoraOperacao(campo){
+   botão Pausar/Retomar (dentro do assistente) quanto por Finalizar operação. Um segundo
+   campo (extra) pode ser gravado junto, como o motivo da pausa. */
+function registrarHoraOperacao(campo, extra){
   const hora = horaAgoraHHMM();
-  servicoAtual[campo] = hora;
+  const dados = { [campo]: hora };
+  if(extra) Object.assign(dados, extra);
+  Object.assign(servicoAtual, dados);
   const idx = servicosCache.findIndex(s=>s.id===servicoAtual.id);
-  if(idx>=0) servicosCache[idx][campo] = hora;
+  if(idx>=0) Object.assign(servicosCache[idx], dados);
   salvarCacheServicos();
-  filaOffline.push({tipo:"updServico", id:servicoAtual.id, dados:{[campo]:hora}});
+  filaOffline.push({tipo:"updServico", id:servicoAtual.id, dados});
   salvarFilaLocal(); processarFila();
   renderOperacaoCard();
   calcularResumo();
@@ -785,8 +1094,8 @@ $("btnFinalizarOperacao").onclick = ()=>{
   const hora = registrarHoraOperacao("horaTermino");
   alert(`✅ Operação finalizada às ${hora}.`);
 };
-/* Pausar/Retomar dentro do assistente: hora sempre automática (não digita nada),
-   com um popup curto confirmando, pra não atrapalhar o ritmo de quem está auditando. */
+/* Pausar/Retomar dentro do assistente: hora sempre automática (não digita nada). Pausar
+   pede o motivo (texto curto); retomar não pede nada — só a hora mesmo. */
 function wizOperacaoEstaPausada(){
   return !!(servicoAtual && servicoAtual.intervalo && !servicoAtual.retorno);
 }
@@ -797,7 +1106,8 @@ function atualizarBotaoPausarWiz(){
   btn.classList.remove("hidden");
   if(wizOperacaoEstaPausada()){
     btn.textContent = "▶ Retomar operação";
-    banner.textContent = `⏸ Operação pausada às ${servicoAtual.intervalo} — toque em "Retomar operação" pra continuar.`;
+    const motivo = servicoAtual.motivoPausa ? ` — ${servicoAtual.motivoPausa}` : "";
+    banner.textContent = `⏸ Operação pausada às ${servicoAtual.intervalo}${motivo} — toque em "Retomar operação" pra continuar.`;
     banner.classList.remove("hidden");
   } else {
     btn.textContent = "⏸ Pausar operação";
@@ -810,10 +1120,19 @@ $("btnPausarOperacaoWiz").onclick = ()=>{
     atualizarBotaoPausarWiz();
     alert(`▶ Operação retomada às ${hora}.`);
   } else {
-    const hora = registrarHoraOperacao("intervalo");
-    atualizarBotaoPausarWiz();
-    alert(`⏸ Operação pausada às ${hora}.`);
+    $("inMotivoPausa").value = "";
+    $("modalMotivoPausa").classList.remove("hidden");
+    setTimeout(()=>{ const el=$("inMotivoPausa"); if(el) el.focus(); }, 30);
   }
+};
+$("motivoPausaCancel").onclick = ()=> $("modalMotivoPausa").classList.add("hidden");
+$("motivoPausaConfirm").onclick = ()=>{
+  const motivo = $("inMotivoPausa").value.trim();
+  if(!motivo){ alert("Descreve rapidinho o motivo da pausa."); return; }
+  $("modalMotivoPausa").classList.add("hidden");
+  const hora = registrarHoraOperacao("intervalo", { motivoPausa: motivo });
+  atualizarBotaoPausarWiz();
+  alert(`⏸ Operação pausada às ${hora} — ${motivo}.`);
 };
 
 /* ================= ASSISTENTE DE LANÇAMENTO (ETAPAS) ================= */
@@ -826,8 +1145,8 @@ const WIZ_STEPS = [
   {key:"obs", label:"Obs"},
   {key:"revisar", label:"Revisar"}
 ];
-const RACAS_OPCOES = ["Nelore","Cruzado","Angus","Girolando","Outro"];
-const CATEGORIAS_OPCOES = ["Bezerra","Novilha","Vaca","Bezerro","Garrote","Boi","Touro"];
+const RACAS_OPCOES = ["Nelore","Cruzado","Muares","Asininos","Equinos"];
+const CATEGORIAS_OPCOES = ["Novilha","Vaca","Garrote","Boi","Muares","Asininos","Equinos"];
 let DESTINOS_OPCOES = ["Confinamento","Recria","Refugo","Sequestro","Outro"]; // sobrescrito por carregarConfig() com a lista salva
 const OBS_CHIPS = ["Anelorado","Diz Anelorado","Não Brincado"];
 
@@ -1104,7 +1423,7 @@ function confirmarESalvarAnimal(){
   const ord = proximaOrdemDoDia; // sempre a sequência do DIA, travada — nunca reinicia por controle
   const animal = {
     id: uid(), controleId: servicoAtual.id, controleNumero: servicoAtual.numero||servicoAtual.id, ord,
-    data: servicoAtual.data, raca: wizData.raca, categoria: wizData.categoria,
+    data: servicoAtual.data, tipoAuditoria: tipoAuditoriaAtual, raca: wizData.raca, categoria: wizData.categoria,
     origem: (wizData.origem||"").trim(), destino: wizData.destino, carimbo,
     obs: (wizData.obs||"").trim(), status:"pendente", loteId:null, conferente1:null, conferente2:null, confAt:null,
     criadoPor: currentUser.uid, criadoPorNome: currentAuditorNome || currentUser.email,
@@ -1116,7 +1435,7 @@ function confirmarESalvarAnimal(){
   filaOffline.push({tipo:"novoAnimal", id:animal.id, dados:animal});
   salvarFilaLocal();
 
-  const totais = {totalAnimais:animaisAtual.length, totalArrobas:somaArrobas()};
+  const totais = {totalAnimais:somaAnimaisControle(), totalArrobas:somaArrobas()};
   Object.assign(servicoAtual, totais);
   const idx = servicosCache.findIndex(s=>s.id===servicoAtual.id);
   if(idx>=0) Object.assign(servicosCache[idx], totais);
@@ -1128,6 +1447,12 @@ function confirmarESalvarAnimal(){
   $("origensList").innerHTML = origens.map(o=>`<option value="${o}">`).join("");
 
   renderTabela();
+  if(tipoAuditoriaAtual === "aleijados"){
+    // no modo Aleijados, cada animal passa por uma telinha extra de foto + localização
+    // antes de voltar pro assistente pro próximo
+    abrirCapturaFotoLocal(animal);
+    return;
+  }
   // continua no assistente, já pronto pro próximo animal (igual ao Audita Certo)
   novoWizardAnimal();
   renderWiz();
@@ -1279,8 +1604,8 @@ $("btnExportTalao").onclick = ()=>{
     y += 9;
   });
 
-  // cruza CATEGORIA x RAÇA (Nelore/Cruzado/Angus fixos + colunas extras se usar outras raças)
-  const racasFixas = ["NELORE","CRUZADO","ANGUS"];
+  // cruza CATEGORIA x RAÇA (Nelore/Cruzado fixos + colunas extras se usar outras raças)
+  const racasFixas = ["NELORE","CRUZADO"];
   const racasExtras = [...new Set(animaisAtual.map(a=>(a.raca||"").toUpperCase()))]
     .filter(r=> r && !racasFixas.includes(r));
   const colunasRaca = [...racasFixas, ...racasExtras];
@@ -1416,8 +1741,20 @@ $("medSave").onclick = async ()=>{
 };
 
 /* ================= ADMIN ================= */
-$("atab-visao").onclick = ()=>{ $("atab-visao").classList.add("active"); $("atab-auditores").classList.remove("active"); $("adminVisaoView").classList.remove("hidden"); $("adminAuditoresView").classList.add("hidden"); };
-$("atab-auditores").onclick = ()=>{ $("atab-auditores").classList.add("active"); $("atab-visao").classList.remove("active"); $("adminAuditoresView").classList.remove("hidden"); $("adminVisaoView").classList.add("hidden"); renderAuditoresList(); };
+$("atab-visao").onclick = ()=>{
+  $("atab-visao").classList.add("active"); $("atab-monitoramento").classList.remove("active"); $("atab-auditores").classList.remove("active");
+  $("adminVisaoView").classList.remove("hidden"); $("adminMonitoramentoView").classList.add("hidden"); $("adminAuditoresView").classList.add("hidden");
+};
+$("atab-monitoramento").onclick = ()=>{
+  $("atab-monitoramento").classList.add("active"); $("atab-visao").classList.remove("active"); $("atab-auditores").classList.remove("active");
+  $("adminMonitoramentoView").classList.remove("hidden"); $("adminVisaoView").classList.add("hidden"); $("adminAuditoresView").classList.add("hidden");
+  renderMonitoramento();
+};
+$("atab-auditores").onclick = ()=>{
+  $("atab-auditores").classList.add("active"); $("atab-visao").classList.remove("active"); $("atab-monitoramento").classList.remove("active");
+  $("adminAuditoresView").classList.remove("hidden"); $("adminVisaoView").classList.add("hidden"); $("adminMonitoramentoView").classList.add("hidden");
+  renderAuditoresList();
+};
 
 async function abrirAdmin(){
   showView("viewAdmin");
@@ -1532,17 +1869,139 @@ function desenharGraficosAdmin(lista){
 }
 function iniciarFeedAdmin(){
   if(adminFeedUnsub) adminFeedUnsub();
-  adminFeedUnsub = db.collection("animais").orderBy("criadoEmLocal","desc").limit(15)
+  adminFeedUnsub = db.collection("animais").orderBy("criadoEmLocal","desc").limit(30)
     .onSnapshot(snap=>{
+      const docs = snap.docs.map(d=>d.data());
       const wrap = $("adminFeed"); wrap.innerHTML="";
-      snap.docs.forEach(d=>{
-        const a = d.data();
+      docs.slice(0,15).forEach(a=>{
         const item = document.createElement("div"); item.className="feed-item";
         item.textContent = `${a.criadoPorNome||"auditor"} lançou Ord. ${a.ord} (${a.raca}, ${a.carimbo}@) — controle ${a.controleNumero||"-"}`;
         wrap.appendChild(item);
       });
-      if(!snap.docs.length) wrap.innerHTML = `<p class="pending">Sem atividade ainda.</p>`;
+      if(!docs.length) wrap.innerHTML = `<p class="pending">Sem atividade ainda.</p>`;
+      renderAtivosAgora(docs);
     }, err=> console.error(err));
+}
+
+/* ================= MONITORAMENTO (rendimento por auditor/retiro/tempo) =================
+   Reaproveita os mesmos dados e o mesmo filtro de retiro/período já carregados pra Visão
+   Geral (adminAnimaisCache/adminControlesCache/adminListaFiltrada) — não busca de novo. */
+function paraMinutosHHMM(hhmm){
+  if(!hhmm) return null;
+  const p = String(hhmm).split(":");
+  if(p.length<2) return null;
+  return Number(p[0])*60 + Number(p[1]);
+}
+function horasTrabalhadasControle(s){
+  const ini = paraMinutosHHMM(s.horaInicio);
+  const fim = paraMinutosHHMM(s.horaTermino);
+  if(ini==null || fim==null) return 0; // só entra na média quem já finalizou a operação
+  let minutos = fim - ini;
+  if(s.intervalo && s.retorno){
+    const pIni = paraMinutosHHMM(s.intervalo), pFim = paraMinutosHHMM(s.retorno);
+    if(pIni!=null && pFim!=null) minutos -= Math.max(0, pFim - pIni);
+  }
+  return Math.max(0, minutos) / 60;
+}
+function qtdAnimal(a){ return a.tipoAuditoria==="confinamento" ? (Number(a.quantidade)||0) : 1; }
+function renderAtivosAgora(docsRecentes){
+  const el = $("monAtivosAgora");
+  if(!el) return;
+  const agora = Date.now();
+  const janela = 30*60*1000; // 30 minutos
+  const porAuditorRecente = {};
+  (docsRecentes||[]).forEach(a=>{
+    const t = a.criadoEmLocal || 0;
+    if(!t || agora - t > janela) return;
+    const nome = a.criadoPorNome || "—";
+    if(!porAuditorRecente[nome] || porAuditorRecente[nome] < t) porAuditorRecente[nome] = t;
+  });
+  const entradas = Object.entries(porAuditorRecente).sort((a,b)=>b[1]-a[1]);
+  if(!entradas.length){ el.innerHTML = `<p class="pending">Ninguém ativo nos últimos 30 minutos.</p>`; return; }
+  el.innerHTML = entradas.map(([nome,t])=>{
+    const minAtras = Math.round((agora-t)/60000);
+    return `<div class="ativo-row"><span>🟢 ${nome}</span><span class="meta">há ${minAtras} min</span></div>`;
+  }).join("");
+}
+function renderMonitoramento(){
+  const lista = adminListaFiltrada();
+  const totalAnimais = lista.reduce((t,a)=> t+qtdAnimal(a), 0);
+  const totalArrobas = lista.reduce((t,a)=> t+(parseFloat(a.carimbo)||0), 0);
+  const auditoresUnicos = new Set(lista.map(a=>a.criadoPorNome||a.criadoPor));
+  $("monTotal").textContent = totalAnimais;
+  $("monArrobas").textContent = totalArrobas.toFixed(1);
+  $("monAuditores").textContent = auditoresUnicos.size;
+
+  // ---- por auditor ----
+  const porAuditor = {};
+  lista.forEach(a=>{
+    const nome = a.criadoPorNome || "—";
+    if(!porAuditor[nome]) porAuditor[nome] = { animais:0, arrobas:0, retiros:new Set(), controleIds:new Set() };
+    porAuditor[nome].animais += qtdAnimal(a);
+    porAuditor[nome].arrobas += (parseFloat(a.carimbo)||0);
+    porAuditor[nome].retiros.add(a._retiro);
+    porAuditor[nome].controleIds.add(a.controleId);
+  });
+  const controlesPorId = {}; adminControlesCache.forEach(c=> controlesPorId[c.id]=c);
+  Object.entries(porAuditor).forEach(([nome, info])=>{
+    let horas = 0;
+    info.controleIds.forEach(cid=>{
+      const c = controlesPorId[cid];
+      if(c && (c.criadoPorNome||c.criadoPor)===nome) horas += horasTrabalhadasControle(c);
+    });
+    info.horas = horas;
+    info.animaisHora = horas>0 ? Math.round((info.animais/horas)*10)/10 : 0;
+  });
+  const comHoras = Object.values(porAuditor).filter(i=>i.horas>0);
+  const totalHorasGeral = comHoras.reduce((t,i)=>t+i.horas,0);
+  const totalAnimaisComHoras = comHoras.reduce((t,i)=>t+i.animais,0);
+  $("monMediaHora").textContent = totalHorasGeral>0 ? Math.round((totalAnimaisComHoras/totalHorasGeral)*10)/10 : 0;
+
+  if(typeof Chart !== "undefined") desenharPizza("chartPorAuditor", Object.fromEntries(Object.entries(porAuditor).map(([k,v])=>[k,v.animais])));
+  const tbAud = $("tabelaPorAuditor"); tbAud.innerHTML = "";
+  Object.entries(porAuditor).sort((a,b)=>b[1].animais-a[1].animais).forEach(([nome,info])=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${nome}</td><td>${info.animais}</td><td>${info.arrobas.toFixed(1)}</td><td>${info.animaisHora||"—"}</td><td>${[...info.retiros].join(", ")}</td>`;
+    tbAud.appendChild(tr);
+  });
+  if(!Object.keys(porAuditor).length) tbAud.innerHTML = `<tr><td colspan="5" class="pending">Sem lançamentos nesse filtro.</td></tr>`;
+
+  // ---- por retiro ----
+  const porRetiro = {};
+  lista.forEach(a=>{
+    const r = a._retiro || "Sede";
+    if(!porRetiro[r]) porRetiro[r] = { animais:0, arrobas:0, controleIds:new Set() };
+    porRetiro[r].animais += qtdAnimal(a);
+    porRetiro[r].arrobas += (parseFloat(a.carimbo)||0);
+    porRetiro[r].controleIds.add(a.controleId);
+  });
+  if(typeof Chart !== "undefined") desenharPizza("chartPorRetiroMon", Object.fromEntries(Object.entries(porRetiro).map(([k,v])=>[k,v.animais])));
+  const tbRet = $("tabelaPorRetiroMon"); tbRet.innerHTML = "";
+  Object.entries(porRetiro).sort((a,b)=>b[1].animais-a[1].animais).forEach(([retiro,info])=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${retiro}</td><td>${info.animais}</td><td>${info.arrobas.toFixed(1)}</td><td>${info.controleIds.size}</td>`;
+    tbRet.appendChild(tr);
+  });
+  if(!Object.keys(porRetiro).length) tbRet.innerHTML = `<tr><td colspan="4" class="pending">Sem lançamentos nesse filtro.</td></tr>`;
+
+  // ---- rendimento diário (últimos 14 dias) ----
+  const hoje = new Date();
+  const dias = [];
+  for(let i=13;i>=0;i--){ const d = new Date(hoje); d.setDate(d.getDate()-i); dias.push(d.toISOString().slice(0,10)); }
+  const porDiaMap = {}; lista.forEach(a=>{ if(a.data) porDiaMap[a.data] = (porDiaMap[a.data]||0)+qtdAnimal(a); });
+  if(typeof Chart !== "undefined") desenharBarrasChart("chartRendimentoDiario", dias.map(d=>[d.split("-").reverse().join("/"), porDiaMap[d]||0]));
+
+  // ---- rendimento semanal (últimas 8 semanas) ----
+  function semanaDe(dataISO){
+    const d = new Date(dataISO+"T00:00:00");
+    const inicioAno = new Date(d.getFullYear(),0,1);
+    const diasPassados = Math.floor((d-inicioAno)/86400000);
+    const semana = Math.ceil((diasPassados + inicioAno.getDay()+1)/7);
+    return `${d.getFullYear()}-S${String(semana).padStart(2,"0")}`;
+  }
+  const porSemanaMap = {}; lista.forEach(a=>{ if(a.data){ const k=semanaDe(a.data); porSemanaMap[k]=(porSemanaMap[k]||0)+qtdAnimal(a); } });
+  const semanasOrdenadas = Object.keys(porSemanaMap).sort().slice(-8);
+  if(typeof Chart !== "undefined") desenharBarrasChart("chartRendimentoSemanal", semanasOrdenadas.map(s=>[s, porSemanaMap[s]]));
 }
 /* ordena por data e depois pela ordem do dia, e atribui um índice geral contínuo
    (1..N) pra exibição — sem repetir números entre dias diferentes, sem alterar o
@@ -1556,10 +2015,15 @@ function listaOrdenadaComIndiceGeral(){
   });
   return lista.map((a,i)=> ({ ...a, indiceGeral: i+1 }));
 }
+function descricaoLocalLancamento(a){
+  if(a.tipoAuditoria==="confinamento") return `${a.linha||""} · ${a.lote||""} (${a.quantidade||0} animais)`;
+  if(a.tipoAuditoria==="aleijados" && a.geoLat!=null && a.geoLng!=null) return `${Number(a.geoLat).toFixed(5)}, ${Number(a.geoLng).toFixed(5)}`;
+  return "";
+}
 $("btnAdminExportExcel").onclick = ()=>{
   const lista = listaOrdenadaComIndiceGeral();
-  const cab = [["Nº GERAL","DATA","CONTROLE","ORD. (DO DIA)","RAÇA","CATEGORIA","ORIGEM","DESTINO","CARIMBO (@)","STATUS","AUDITOR","OBS."]];
-  lista.forEach(a=> cab.push([a.indiceGeral,a.data||"",a.controleNumero,a.ord,a.raca,a.categoria||"",a.origem,a.destino,a.carimbo,a.status,a.criadoPorNome,a.obs]));
+  const cab = [["Nº GERAL","DATA","CONTROLE","TIPO","ORD. (DO DIA)","RAÇA","CATEGORIA","ORIGEM","DESTINO","CARIMBO (@)","LOCAL","STATUS","AUDITOR","OBS."]];
+  lista.forEach(a=> cab.push([a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.ord,a.raca,a.categoria||"",a.origem,a.destino,a.carimbo,descricaoLocalLancamento(a),a.status,a.criadoPorNome,a.obs]));
   const ws = XLSX.utils.aoa_to_sheet(cab); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Todos"); XLSX.writeFile(wb, "Controle_Servico_Geral.xlsx");
 };
@@ -1873,8 +2337,8 @@ $("btnAdminExportPDF").onclick = async ()=>{
   doc.setFontSize(14); doc.setTextColor(0,0,0); doc.setFont(undefined,"bold");
   doc.text(`CONTROLE DE SERVIÇO — GERAL (${lista.length} animais)`, 14, 15);
   doc.setFont(undefined,"normal");
-  doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Raça","Categoria","Destino","@","Status","Auditor"]],
-    body: lista.map(a=>[a.indiceGeral,a.data||"",a.controleNumero,a.raca,a.categoria||"",a.destino,a.carimbo,a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome]), styles:{fontSize:7} });
+  doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Tipo","Raça","Categoria","Destino","@","Local","Status","Auditor"]],
+    body: lista.map(a=>[a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",a.destino,a.carimbo,descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome]), styles:{fontSize:6.5} });
   doc.save("Controle_Servico_Geral.pdf");
 };
 
@@ -1895,6 +2359,7 @@ $("adminEditSearch").addEventListener("input", ()=>{
 let animalEditandoAdmin = null;
 function abrirAdminEdit(a){
   animalEditandoAdmin = a;
+  $("aeRaca").innerHTML = RACAS_OPCOES.map(r=>`<option value="${r}">${r}</option>`).join("");
   $("aeRaca").value=a.raca; $("aeOrigem").value=a.origem||"";
   $("aeCategoria").innerHTML = CATEGORIAS_OPCOES.map(c=>`<option value="${c}">${c}</option>`).join("");
   $("aeCategoria").value=a.categoria||"";
