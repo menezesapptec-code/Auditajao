@@ -288,7 +288,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 
   <div class="card">
     <h2>Lançar animal</h2>
-    <p class="sub">Passa pelas etapas (Raça, Categoria, Carimbo, Obs) e entra como <strong>pendente</strong>. Origem, Destino e Pasto são informados no fim do manejo, ao finalizar a operação — some pra "Conferência" pra selecionar o lote e soltar.</p>
+    <p class="sub">Passa pelas etapas (Raça, Categoria, Carimbo, Obs) e entra como <strong>pendente</strong>. Origem e Destino são informados depois, na aba Carimbos, por lote de carimbo — some pra "Conferência" pra selecionar o lote e soltar.</p>
     <datalist id="origensList"></datalist>
     <button class="btn-primary btn-block" id="btnAbrirWizardAnimal" style="padding:16px;font-size:16px;">+ Adicionar Animal (Ord. <span id="proxOrd">1</span>)</button>
   </div>
@@ -364,7 +364,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   <div id="confConferidosView" class="hidden">
     <div class="card">
       <h2>Animais já soltos</h2>
-      <p class="sub">Toque em um animal pra editar só o destino.</p>
+      <p class="sub">Toque em um animal pra editar só o destino (🔒 = já lançado na aba Carimbos, só o admin altera).</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Ord.</th><th>Raça</th><th>Destino</th><th>@</th><th>Lote</th></tr></thead>
@@ -516,7 +516,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 <div id="viewCarimbos" class="container hidden">
   <div class="card">
     <h2>Animais por carimbo</h2>
-    <p class="sub">Quantos animais caíram em cada carimbo (@). Deixa a data em branco pra ver tudo.</p>
+    <p class="sub">Quantos animais caíram em cada carimbo (@). Toque num lote pra lançar Origem e Destino — vale pra todos os animais daquele carimbo no filtro. Depois de lançado, só o administrador pode alterar.</p>
     <div class="grid">
       <div><label>Data</label><input type="date" id="carimboFiltroData"></div>
       <div><label>Nº da ordem (opcional)</label><input id="carimboFiltroNumero" placeholder="Todas" inputmode="numeric"></div>
@@ -530,7 +530,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Carimbo (@)</th><th>Animais</th><th>Total @</th></tr></thead>
+        <thead><tr><th>Carimbo (@)</th><th>Animais</th><th>Total @</th><th>Origem</th><th>Destino</th></tr></thead>
         <tbody id="tabelaCarimbos"></tbody>
       </table>
     </div>
@@ -584,14 +584,27 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 <div id="modalFimManejo" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:62;display:flex;align-items:center;justify-content:center;padding:16px;">
   <div class="card" style="max-width:420px;width:100%;">
     <h2>🏁 Finalizar operação</h2>
-    <p class="sub">Fim do manejo: informe de onde os animais vieram, pra onde vão e o pasto. Vale pra todos os animais deste controle. A hora final é registrada automaticamente.</p>
-    <label>Origem</label><input id="fmOrigem" placeholder="Ex: Pasto 3" list="origensList">
-    <label style="margin-top:10px;">Destino</label><select id="fmDestino"></select>
-    <input id="fmDestinoOutro" class="hidden" placeholder="Qual destino?" style="margin-top:6px;">
-    <label style="margin-top:10px;">Pasto</label><input id="fmPasto" placeholder="Ex: Pasto da Divisa">
+    <p class="sub">A hora final é registrada automaticamente. Origem e Destino são informados depois, na aba <strong>⚖ Carimbos</strong>, por lote de carimbo.</p>
+    <label>Pasto (opcional)</label><input id="fmPasto" placeholder="Ex: Pasto da Divisa">
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn-secondary" id="fmCancel">Cancelar</button>
       <button class="btn-primary" id="fmConfirm">Finalizar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: ORIGEM / DESTINO DO LOTE DE CARIMBO -->
+<div id="modalLoteCarimbo" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:62;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div class="card" style="max-width:420px;width:100%;">
+    <h2 id="lcTitulo">Lote</h2>
+    <p class="sub" id="lcSub">—</p>
+    <label>Origem</label><input id="lcOrigem" placeholder="Ex: Pasto 3" list="origensList">
+    <label style="margin-top:10px;">Destino</label><select id="lcDestino"></select>
+    <input id="lcDestinoOutro" class="hidden" placeholder="Qual destino?" style="margin-top:6px;">
+    <p class="sub" style="margin-top:10px;color:var(--alerta,#a9382f);">⚠ Depois de salvar, não dá mais pra alterar por aqui — só pelo painel do administrador.</p>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn-secondary" id="lcCancel">Cancelar</button>
+      <button class="btn-primary" id="lcConfirm">Aplicar ao lote</button>
     </div>
   </div>
 </div>
@@ -1253,37 +1266,20 @@ function registrarHoraOperacao(campo, extra){
    pedidos animal por animal). Depois registra a hora final. */
 function finalizarOperacao(){
   if(!servicoAtual) return;
-  $("fmOrigem").value = servicoAtual.origem || "";
   $("fmPasto").value = servicoAtual.pasto || "";
-  $("fmDestino").innerHTML = `<option value="">Selecione...</option>` + DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
-  const destAtual = servicoAtual.destino || "";
-  if(destAtual && DESTINOS_OPCOES.includes(destAtual)){ $("fmDestino").value = destAtual; $("fmDestinoOutro").classList.add("hidden"); }
-  else if(destAtual){ $("fmDestino").value = "Outro"; $("fmDestinoOutro").value = destAtual; $("fmDestinoOutro").classList.remove("hidden"); }
-  else { $("fmDestino").value = ""; $("fmDestinoOutro").value = ""; $("fmDestinoOutro").classList.add("hidden"); }
   $("modalFimManejo").classList.remove("hidden");
-  setTimeout(()=>{ const el=$("fmOrigem"); if(el) el.focus(); }, 30);
+  setTimeout(()=>{ const el=$("fmPasto"); if(el) el.focus(); }, 30);
 }
-$("fmDestino").addEventListener("change", ()=>{
-  const outro = $("fmDestino").value === "Outro";
-  $("fmDestinoOutro").classList.toggle("hidden", !outro);
-  if(outro) setTimeout(()=> $("fmDestinoOutro").focus(), 30);
-});
 $("fmCancel").onclick = ()=> $("modalFimManejo").classList.add("hidden");
 $("fmConfirm").onclick = ()=>{
-  const origem = $("fmOrigem").value.trim();
-  const destino = $("fmDestino").value === "Outro" ? $("fmDestinoOutro").value.trim() : $("fmDestino").value;
   const pasto = $("fmPasto").value.trim();
-  if(!destino){ alert("Selecione o destino dos animais."); return; }
-  if(!pasto){ alert("Informe o pasto."); return; }
   $("modalFimManejo").classList.add("hidden");
 
-  // aplica nos animais do controle que ainda estão sem esses dados
+  // pasto (se informado) vai pros animais do controle que ainda estão sem
   let alterados = 0;
   animaisAtual.forEach(a=>{
     const dados = {};
-    if(!a.origem && origem) dados.origem = origem;
-    if(!a.destino) dados.destino = destino;
-    if(!a.pasto) dados.pasto = pasto;
+    if(pasto && !a.pasto) dados.pasto = pasto;
     if(Object.keys(dados).length){
       Object.assign(a, dados);
       filaOffline.push({tipo:"updAnimal", id:a.id, dados});
@@ -1293,9 +1289,9 @@ $("fmConfirm").onclick = ()=>{
   localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
   salvarFilaLocal();
 
-  const hora = registrarHoraOperacao("horaTermino", { origem, destino, pasto });
+  const hora = registrarHoraOperacao("horaTermino", pasto ? { pasto } : null);
   if($("tabelaAnimais") && !$("viewServico").classList.contains("hidden")) renderTabela();
-  alert(`✅ Operação finalizada às ${hora}.\nOrigem: ${origem||"—"} · Destino: ${destino} · Pasto: ${pasto}\n(${alterados} lançamento(s) atualizados)`);
+  alert(`✅ Operação finalizada às ${hora}.${pasto?`\nPasto: ${pasto}`:""}\nOrigem e Destino: lança na aba ⚖ Carimbos.`);
 };
 $("btnFinalizarOperacao").onclick = finalizarOperacao;
 $("btnFinalizarOperacaoConf").onclick = finalizarOperacao;
@@ -1376,9 +1372,15 @@ async function carregarCarimbos(){
       snap.docs.forEach(d=>{ porId[d.id] = {id:d.id, ...d.data()}; });
     }catch(e){ console.error(e); }
   }
+  // reaplica o que ainda está na fila offline (mais novo que o servidor)
+  filaOffline.forEach(op=>{
+    if(op.tipo==="novoAnimal" && !porId[op.id]) porId[op.id] = {...op.dados};
+    else if((op.tipo==="updAnimal" || op.tipo==="novoAnimal") && porId[op.id]) Object.assign(porId[op.id], op.dados);
+  });
   carimbosAnimaisCache = Object.values(porId);
   renderCarimbos();
 }
+let gruposCarimboAtuais = [];
 function renderCarimbos(){
   const fData = $("carimboFiltroData").value;
   const fNum = normNumero($("carimboFiltroNumero").value);
@@ -1389,16 +1391,96 @@ function renderCarimbos(){
   lista.forEach(a=>{
     const v = Math.round((parseFloat(a.carimbo)||0)*10)/10;
     const k = String(v);
-    if(!grupos[k]) grupos[k] = { valor:v, n:0 };
+    if(!grupos[k]) grupos[k] = { valor:v, n:0, animais:[] };
     grupos[k].n++;
+    grupos[k].animais.push(a);
   });
   const linhas = Object.values(grupos).sort((a,b)=> a.valor-b.valor);
+  gruposCarimboAtuais = linhas;
   const fmt = v=> v.toLocaleString("pt-BR",{maximumFractionDigits:1});
-  $("tabelaCarimbos").innerHTML = linhas.map(g=>`<tr><td><strong>${fmt(g.valor)} @</strong></td><td>${g.n} ${g.n===1?"animal":"animais"}</td><td>${fmt(g.valor*g.n)}</td></tr>`).join("");
+  const resumoCampo = (anims, campo)=>{
+    const vals = [...new Set(anims.filter(a=>a.origemDestinoTravado).map(a=>a[campo]||"—"))];
+    return vals.length ? vals.join(", ") : "";
+  };
+  $("tabelaCarimbos").innerHTML = linhas.map((g,i)=>{
+    const pend = g.animais.filter(a=>!a.origemDestinoTravado).length;
+    const travado = pend===0;
+    const origem = resumoCampo(g.animais,"origem"), destino = resumoCampo(g.animais,"destino");
+    const extra = (!travado && pend<g.n) ? `<div class="meta">${pend} sem origem/destino</div>` : "";
+    return `<tr data-grupo="${i}" style="cursor:${travado?"default":"pointer"};">
+      <td><strong>${fmt(g.valor)} @</strong></td><td>${g.n} ${g.n===1?"animal":"animais"}</td><td>${fmt(g.valor*g.n)}</td>
+      <td>${travado?"🔒 ":""}${origem || (travado?"—":"<span style='color:var(--cinza);'>toque pra lançar</span>")}${extra}</td>
+      <td>${travado?"🔒 ":""}${destino || (travado?"—":"")}</td></tr>`;
+  }).join("");
+  document.querySelectorAll("#tabelaCarimbos tr[data-grupo]").forEach(tr=>{
+    tr.onclick = ()=> abrirLoteCarimbo(gruposCarimboAtuais[Number(tr.dataset.grupo)]);
+  });
   $("carimbosVazio").classList.toggle("hidden", linhas.length>0);
   $("carimboTotalAnimais").textContent = lista.length;
   $("carimboTotalArrobas").textContent = fmt(lista.reduce((t,a)=> t+(parseFloat(a.carimbo)||0), 0));
 }
+/* Lote de carimbo: aplica Origem + Destino em todos os animais daquele carimbo (no filtro
+   atual) que ainda não têm. Depois disso fica travado no painel do auditor — só o admin
+   altera (pela edição de lançamento no painel admin). */
+let loteCarimboAtual = null;
+function abrirLoteCarimbo(g){
+  if(!g) return;
+  const pendentes = g.animais.filter(a=>!a.origemDestinoTravado);
+  const fmt = v=> v.toLocaleString("pt-BR",{maximumFractionDigits:1});
+  if(!pendentes.length){
+    alert(`🔒 O lote de ${fmt(g.valor)} @ já tem Origem e Destino lançados.\nPra alterar, fale com o administrador.`);
+    return;
+  }
+  loteCarimboAtual = { valor:g.valor, animais:pendentes };
+  $("lcTitulo").textContent = `Lote ${fmt(g.valor)} @`;
+  const fData = $("carimboFiltroData").value;
+  $("lcSub").textContent = `${pendentes.length} ${pendentes.length===1?"animal":"animais"} sem origem/destino${fData?` · ${formatarDataBR(fData)}`:" · todas as datas"}`;
+  $("lcOrigem").value = "";
+  $("lcDestino").innerHTML = `<option value="">Selecione...</option>` + DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
+  $("lcDestino").value = ""; $("lcDestinoOutro").value = ""; $("lcDestinoOutro").classList.add("hidden");
+  const origensConhecidas = [...new Set(carimbosAnimaisCache.map(a=>a.origem).filter(Boolean))];
+  $("origensList").innerHTML = origensConhecidas.map(o=>`<option value="${o}">`).join("");
+  $("modalLoteCarimbo").classList.remove("hidden");
+  setTimeout(()=>{ const el=$("lcOrigem"); if(el) el.focus(); }, 30);
+}
+$("lcDestino").addEventListener("change", ()=>{
+  const outro = $("lcDestino").value === "Outro";
+  $("lcDestinoOutro").classList.toggle("hidden", !outro);
+  if(outro) setTimeout(()=> $("lcDestinoOutro").focus(), 30);
+});
+$("lcCancel").onclick = ()=>{ $("modalLoteCarimbo").classList.add("hidden"); loteCarimboAtual = null; };
+$("lcConfirm").onclick = ()=>{
+  if(!loteCarimboAtual) return;
+  const origem = $("lcOrigem").value.trim();
+  const destino = $("lcDestino").value === "Outro" ? $("lcDestinoOutro").value.trim() : $("lcDestino").value;
+  if(!origem){ alert("Informe a origem."); return; }
+  if(!destino){ alert("Selecione o destino."); return; }
+  const n = loteCarimboAtual.animais.length;
+  if(!confirm(`Aplicar Origem "${origem}" e Destino "${destino}" em ${n} ${n===1?"animal":"animais"} de ${loteCarimboAtual.valor} @?\n\nDepois disso só o administrador consegue alterar.`)) return;
+  const dados = { origem, destino, origemDestinoTravado:true, origemDestinoEm: Date.now() };
+  const porControle = {};
+  loteCarimboAtual.animais.forEach(a=>{
+    Object.assign(a, dados);
+    filaOffline.push({tipo:"updAnimal", id:a.id, dados:{...dados}});
+    if(a.controleId){ (porControle[a.controleId] = porControle[a.controleId] || []).push(a.id); }
+  });
+  // atualiza o cache local de cada controle envolvido
+  Object.keys(porControle).forEach(cid=>{
+    try{
+      const lista = JSON.parse(localStorage.getItem("animais_"+cid) || "[]");
+      lista.forEach(x=>{ if(porControle[cid].includes(x.id)) Object.assign(x, dados); });
+      localStorage.setItem("animais_"+cid, JSON.stringify(lista));
+    }catch(e){}
+    if(servicoAtual && servicoAtual.id===cid){
+      animaisAtual.forEach(x=>{ if(porControle[cid].includes(x.id)) Object.assign(x, dados); });
+    }
+  });
+  salvarFilaLocal(); processarFila();
+  $("modalLoteCarimbo").classList.add("hidden");
+  loteCarimboAtual = null;
+  renderCarimbos();
+  alert(`✅ Origem e destino aplicados em ${n} ${n===1?"animal":"animais"}.`);
+};
 $("carimboFiltroData").addEventListener("change", carregarCarimbos);
 $("carimboFiltroNumero").addEventListener("input", renderCarimbos);
 $("btnCarimboTudo").onclick = ()=>{ $("carimboFiltroData").value = ""; carregarCarimbos(); };
@@ -1979,7 +2061,7 @@ async function renderConferidos(){
     lista.forEach(a=>{
       const tr = document.createElement("tr");
       tr.style.cursor="pointer";
-      tr.innerHTML = `<td>${a.ord}</td><td>${a.raca}</td><td>${a.destino}</td><td>${a.carimbo}</td><td>${(a.loteId||"").slice(-5)}</td>`;
+      tr.innerHTML = `<td>${a.ord}</td><td>${a.raca}</td><td>${a.origemDestinoTravado?"🔒 ":""}${a.destino||"-"}</td><td>${a.carimbo}</td><td>${(a.loteId||"").slice(-5)}</td>`;
       tr.onclick = ()=> abrirEditDestino(a);
       tbody.appendChild(tr);
     });
@@ -1988,6 +2070,7 @@ async function renderConferidos(){
 }
 let animalEditandoDestino = null;
 function abrirEditDestino(a){
+  if(a.origemDestinoTravado){ alert("🔒 Origem e destino desse animal já foram lançados na aba Carimbos — só o administrador pode alterar."); return; }
   animalEditandoDestino = a;
   $("medAnimalLbl").textContent = `Ord. ${a.ord} · ${a.raca} · ${a.carimbo}@`;
   $("medDestino").innerHTML = DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
