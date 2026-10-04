@@ -601,6 +601,9 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <label>Origem</label><input id="lcOrigem" placeholder="Ex: Pasto 3" list="origensList">
     <label style="margin-top:10px;">Destino</label><select id="lcDestino"></select>
     <input id="lcDestinoOutro" class="hidden" placeholder="Qual destino?" style="margin-top:6px;">
+    <div id="lcDetalheWrap" class="hidden" style="margin-top:10px;">
+      <label id="lcDetalheLbl">Detalhe</label><input id="lcDetalhe" placeholder="">
+    </div>
     <p class="sub" style="margin-top:10px;color:var(--alerta,#a9382f);">⚠ Depois de salvar, não dá mais pra alterar por aqui — só pelo painel do administrador.</p>
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn-secondary" id="lcCancel">Cancelar</button>
@@ -652,6 +655,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
       <div><label>Destino</label>
         <select id="aeDestino"></select>
       </div>
+      <div><label>Curral / pasto do destino</label><input id="aeDestinoDetalhe"></div>
       <div><label>Pasto</label><input id="aePasto"></div>
       <div><label>Carimbo (@)</label><input type="number" step="0.1" id="aeCarimbo"></div>
       <div class="full"><label>Obs.</label><input id="aeObs"></div>
@@ -1344,6 +1348,21 @@ $("motivoPausaConfirm").onclick = ()=>{
   alert(`⏸ Operação pausada às ${hora} — ${motivo}.`);
 };
 
+/* Destino + para onde exatamente (curral do confinamento, pasto da recria, etc.) */
+const DETALHE_DESTINO = {
+  "Confinamento": { lbl:"Qual curral do confinamento?", ph:"Ex: Curral 12" },
+  "Recria":       { lbl:"Qual pasto?",                  ph:"Ex: Pasto da Divisa" },
+  "Sequestro":    { lbl:"Qual curral?",                 ph:"Ex: Curral 3" },
+  "Refugo":       { lbl:"Qual curral?",                 ph:"Ex: Curral 5" }
+};
+function infoDetalheDestino(destino){
+  return DETALHE_DESTINO[destino] || { lbl:"Informações do destino", ph:"Escreva pra onde vai (curral, pasto, lote...)" };
+}
+function destinoComDetalhe(a){
+  if(!a || !a.destino) return "";
+  return a.destinoDetalhe ? `${a.destino} — ${a.destinoDetalhe}` : a.destino;
+}
+
 /* ================= CARIMBOS (animais agrupados por @) ================= */
 let carimbosAnimaisCache = [];
 async function abrirCarimbos(){
@@ -1405,7 +1424,9 @@ function renderCarimbos(){
   $("tabelaCarimbos").innerHTML = linhas.map((g,i)=>{
     const pend = g.animais.filter(a=>!a.origemDestinoTravado).length;
     const travado = pend===0;
-    const origem = resumoCampo(g.animais,"origem"), destino = resumoCampo(g.animais,"destino");
+    const origem = resumoCampo(g.animais,"origem");
+    const destVals = [...new Set(g.animais.filter(a=>a.origemDestinoTravado).map(a=>destinoComDetalhe(a)||"—"))];
+    const destino = destVals.join(", ");
     const extra = (!travado && pend<g.n) ? `<div class="meta">${pend} sem origem/destino</div>` : "";
     return `<tr data-grupo="${i}" style="cursor:${travado?"default":"pointer"};">
       <td><strong>${fmt(g.valor)} @</strong></td><td>${g.n} ${g.n===1?"animal":"animais"}</td><td>${fmt(g.valor*g.n)}</td>
@@ -1438,15 +1459,26 @@ function abrirLoteCarimbo(g){
   $("lcOrigem").value = "";
   $("lcDestino").innerHTML = `<option value="">Selecione...</option>` + DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
   $("lcDestino").value = ""; $("lcDestinoOutro").value = ""; $("lcDestinoOutro").classList.add("hidden");
+  $("lcDetalhe").value = ""; $("lcDetalheWrap").classList.add("hidden");
   const origensConhecidas = [...new Set(carimbosAnimaisCache.map(a=>a.origem).filter(Boolean))];
   $("origensList").innerHTML = origensConhecidas.map(o=>`<option value="${o}">`).join("");
   $("modalLoteCarimbo").classList.remove("hidden");
   setTimeout(()=>{ const el=$("lcOrigem"); if(el) el.focus(); }, 30);
 }
 $("lcDestino").addEventListener("change", ()=>{
-  const outro = $("lcDestino").value === "Outro";
+  const v = $("lcDestino").value;
+  const outro = v === "Outro";
   $("lcDestinoOutro").classList.toggle("hidden", !outro);
-  if(outro) setTimeout(()=> $("lcDestinoOutro").focus(), 30);
+  // depois de escolher o destino, abre o campo pra dizer pra onde exatamente vai
+  if(v){
+    const info = infoDetalheDestino(v);
+    $("lcDetalheLbl").textContent = info.lbl;
+    $("lcDetalhe").placeholder = info.ph;
+    $("lcDetalheWrap").classList.remove("hidden");
+  } else {
+    $("lcDetalheWrap").classList.add("hidden");
+  }
+  setTimeout(()=> (outro ? $("lcDestinoOutro") : $("lcDetalhe")).focus(), 30);
 });
 $("lcCancel").onclick = ()=>{ $("modalLoteCarimbo").classList.add("hidden"); loteCarimboAtual = null; };
 $("lcConfirm").onclick = ()=>{
@@ -1455,9 +1487,11 @@ $("lcConfirm").onclick = ()=>{
   const destino = $("lcDestino").value === "Outro" ? $("lcDestinoOutro").value.trim() : $("lcDestino").value;
   if(!origem){ alert("Informe a origem."); return; }
   if(!destino){ alert("Selecione o destino."); return; }
+  const destinoDetalhe = $("lcDetalhe").value.trim();
+  if(!destinoDetalhe){ alert(infoDetalheDestino($("lcDestino").value).lbl.replace("?","") + " — preencha pra continuar."); $("lcDetalhe").focus(); return; }
   const n = loteCarimboAtual.animais.length;
-  if(!confirm(`Aplicar Origem "${origem}" e Destino "${destino}" em ${n} ${n===1?"animal":"animais"} de ${loteCarimboAtual.valor} @?\n\nDepois disso só o administrador consegue alterar.`)) return;
-  const dados = { origem, destino, origemDestinoTravado:true, origemDestinoEm: Date.now() };
+  if(!confirm(`Aplicar Origem "${origem}" e Destino "${destino} — ${destinoDetalhe}" em ${n} ${n===1?"animal":"animais"} de ${loteCarimboAtual.valor} @?\n\nDepois disso só o administrador consegue alterar.`)) return;
+  const dados = { origem, destino, destinoDetalhe, origemDestinoTravado:true, origemDestinoEm: Date.now() };
   const porControle = {};
   loteCarimboAtual.animais.forEach(a=>{
     Object.assign(a, dados);
@@ -1820,7 +1854,7 @@ function renderTabela(){
     const tr = document.createElement("tr");
     const cls = a.destino==="Confinamento"?"conf":a.destino==="Recria"?"recria":a.destino==="Refugo"?"refugo":"outro";
     tr.innerHTML = `<td>${a.ord}</td><td>${a.raca}</td><td>${a.categoria||"-"}</td><td>${a.origem||"-"}</td>
-      <td>${a.destino?`<span class="badge ${cls}">${a.destino}</span>`:"-"}</td><td>${a.pasto||"-"}</td><td>${a.carimbo}</td>
+      <td>${a.destino?`<span class="badge ${cls}">${destinoComDetalhe(a)}</span>`:"-"}</td><td>${a.pasto||"-"}</td><td>${a.carimbo}</td>
       <td><span class="badge ${a.status}">${a.status==="pendente"?"Pendente":"Solto"}</span></td>
       <td>${a.obs||""}</td>
       <td class="row-actions">${a.status==="pendente"?`<button class="btn-danger" data-id="${a.id}">✕</button>`:""}</td>`;
@@ -1875,7 +1909,7 @@ $("btnExportExcel").onclick = ()=>{
     ["Recria", $("cRecria").textContent], ["Refugo", $("cRefugo").textContent], ["Outros", $("cOutro").textContent],
     [], ["ORD.","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","CARIMBO (@)","STATUS","OBS."]
   ];
-  animaisAtual.forEach(a=> cab.push([a.ord,a.raca,a.categoria||"",a.origem||"",a.destino||"",a.pasto||"",a.carimbo,a.status,a.obs]));
+  animaisAtual.forEach(a=> cab.push([a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,a.status,a.obs]));
   const ws = XLSX.utils.aoa_to_sheet(cab);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Controle");
   XLSX.writeFile(wb, nomeArquivo("xlsx"));
@@ -1893,7 +1927,7 @@ $("btnExportPDF").onclick = ()=>{
   ];
   doc.text(linhas, 14, y);
   doc.autoTable({ startY:y+22, head:[["Ord.","Raça","Categoria","Origem","Destino","Pasto","@ Carimbo","Status","Obs."]],
-    body: animaisAtual.map(a=>[a.ord,a.raca,a.categoria||"",a.origem||"",a.destino||"",a.pasto||"",a.carimbo,a.status==="pendente"?"Pendente":"Solto",a.obs]), styles:{fontSize:8} });
+    body: animaisAtual.map(a=>[a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,a.status==="pendente"?"Pendente":"Solto",a.obs]), styles:{fontSize:8} });
   doc.save(nomeArquivo("pdf"));
 };
 
@@ -2023,7 +2057,7 @@ function renderPendChecklist(){
   pendentesCache.forEach(a=>{
     const row = document.createElement("div"); row.className="check-row";
     row.innerHTML = `<input type="checkbox" data-id="${a.id}" ${selecionados.has(a.id)?"checked":""}>
-      <div>Controle ${a.controleNumero||"-"} · Ord. ${a.ord} · ${a.raca} · ${a.destino} · ${a.carimbo}@</div>`;
+      <div>Controle ${a.controleNumero||"-"} · Ord. ${a.ord} · ${a.raca} · ${destinoComDetalhe(a)||"-"} · ${a.carimbo}@</div>`;
     row.querySelector("input").onchange = e=>{ e.target.checked ? selecionados.add(a.id) : selecionados.delete(a.id); $("cSelecionados").textContent=selecionados.size; };
     wrap.appendChild(row);
   });
@@ -2061,7 +2095,7 @@ async function renderConferidos(){
     lista.forEach(a=>{
       const tr = document.createElement("tr");
       tr.style.cursor="pointer";
-      tr.innerHTML = `<td>${a.ord}</td><td>${a.raca}</td><td>${a.origemDestinoTravado?"🔒 ":""}${a.destino||"-"}</td><td>${a.carimbo}</td><td>${(a.loteId||"").slice(-5)}</td>`;
+      tr.innerHTML = `<td>${a.ord}</td><td>${a.raca}</td><td>${a.origemDestinoTravado?"🔒 ":""}${destinoComDetalhe(a)||"-"}</td><td>${a.carimbo}</td><td>${(a.loteId||"").slice(-5)}</td>`;
       tr.onclick = ()=> abrirEditDestino(a);
       tbody.appendChild(tr);
     });
@@ -2383,7 +2417,7 @@ function descricaoLocalLancamento(a){
 $("btnAdminExportExcel").onclick = ()=>{
   const lista = listaOrdenadaComIndiceGeral();
   const cab = [["Nº GERAL","DATA","CONTROLE","TIPO","ORD. (DO DIA)","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","CARIMBO (@)","LOCAL","STATUS","AUDITOR","OBS."]];
-  lista.forEach(a=> cab.push([a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.ord,a.raca,a.categoria||"",a.origem||"",a.destino||"",a.pasto||"",a.carimbo,descricaoLocalLancamento(a),a.status,a.criadoPorNome,a.obs]));
+  lista.forEach(a=> cab.push([a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,descricaoLocalLancamento(a),a.status,a.criadoPorNome,a.obs]));
   const ws = XLSX.utils.aoa_to_sheet(cab); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Todos"); XLSX.writeFile(wb, "Controle_Servico_Geral.xlsx");
 };
@@ -2701,7 +2735,7 @@ $("btnAdminExportPDF").onclick = async ()=>{
   doc.text(`CONTROLE DE SERVIÇO — GERAL (${lista.length} animais)`, 14, 15);
   doc.setFont(undefined,"normal");
   doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Tipo","Raça","Categoria","Destino","@","Local","Status","Auditor"]],
-    body: lista.map(a=>[a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",a.destino,a.carimbo,descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome]), styles:{fontSize:6.5} });
+    body: lista.map(a=>[a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",destinoComDetalhe(a),a.carimbo,descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome]), styles:{fontSize:6.5} });
   doc.save("Controle_Servico_Geral.pdf");
 };
 
@@ -2714,7 +2748,7 @@ $("adminEditSearch").addEventListener("input", ()=>{
   res.forEach(a=>{
     const div = document.createElement("div"); div.className="list-item";
     div.innerHTML = `<div><div style="font-weight:600;">Controle ${a.controleNumero} · Ord. ${a.ord}</div>
-      <div class="meta">${a.raca} · ${a.destino} · ${a.carimbo}@</div></div><div>✏</div>`;
+      <div class="meta">${a.raca} · ${destinoComDetalhe(a)||"-"} · ${a.carimbo}@</div></div><div>✏</div>`;
     div.onclick = ()=> abrirAdminEdit(a);
     wrap.appendChild(div);
   });
@@ -2728,13 +2762,13 @@ function abrirAdminEdit(a){
   $("aeCategoria").value=a.categoria||"";
   $("aeDestino").innerHTML = DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
   $("aeDestino").value=a.destino;
-  $("aeCarimbo").value=a.carimbo; $("aeObs").value=a.obs||""; $("aePasto").value=a.pasto||"";
+  $("aeCarimbo").value=a.carimbo; $("aeObs").value=a.obs||""; $("aePasto").value=a.pasto||""; $("aeDestinoDetalhe").value=a.destinoDetalhe||"";
   $("modalAdminEdit").classList.remove("hidden");
 }
 $("aeCancel").onclick = ()=> $("modalAdminEdit").classList.add("hidden");
 $("aeSave").onclick = async ()=>{
   if(!animalEditandoAdmin) return;
-  const dados = { raca:$("aeRaca").value, categoria:$("aeCategoria").value, origem:$("aeOrigem").value.trim(), destino:$("aeDestino").value, pasto:$("aePasto").value.trim(), carimbo:parseFloat($("aeCarimbo").value)||0, obs:$("aeObs").value.trim() };
+  const dados = { raca:$("aeRaca").value, categoria:$("aeCategoria").value, origem:$("aeOrigem").value.trim(), destino:$("aeDestino").value, pasto:$("aePasto").value.trim(), destinoDetalhe:$("aeDestinoDetalhe").value.trim(), carimbo:parseFloat($("aeCarimbo").value)||0, obs:$("aeObs").value.trim() };
   try{
     await db.collection("animais").doc(animalEditandoAdmin.id).update(dados);
     $("modalAdminEdit").classList.add("hidden");
