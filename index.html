@@ -254,8 +254,8 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <div class="grid">
       <div><label>Nº do Controle</label><input id="fNumero" placeholder="Ex: 001"></div>
       <div><label>Data</label><input type="date" id="fData"></div>
-      <div><label>Fazenda</label><input id="fFazenda" placeholder="Ex: Fazenda Jaó"></div>
-      <div><label>Retiro</label><input id="fRetiro" placeholder="Ex: Retiro Sede"></div>
+      <div><label>Fazenda</label><input id="fFazenda" readonly style="background:#f3f3f0;"></div>
+      <div><label>Retiro 🔒</label><input id="fRetiro" readonly style="background:#f3f3f0;" title="Definido ao iniciar a auditoria — cada retiro tem contagem separada"></div>
       <div><label>Vet. Responsável</label><input id="fVet" placeholder="Nome"></div>
       <div><label>Qnt. Pas. / Responsável</label><input id="fResponsavel" placeholder="Nome"></div>
     </div>
@@ -520,6 +520,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <div class="grid">
       <div><label>Data</label><input type="date" id="carimboFiltroData"></div>
       <div><label>Nº da ordem (opcional)</label><input id="carimboFiltroNumero" placeholder="Todas" inputmode="numeric"></div>
+      <div><label>Retiro</label><select id="carimboFiltroRetiro"></select></div>
     </div>
     <button class="btn-secondary btn-block" id="btnCarimboTudo" style="margin-top:8px;">Ver todas as datas</button>
   </div>
@@ -530,7 +531,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Carimbo (@)</th><th>Animais</th><th>Total @</th><th>Origem</th><th>Destino</th></tr></thead>
+        <thead><tr><th>Carimbo (@)</th><th>Retiro</th><th>Animais</th><th>Total @</th><th>Origem</th><th>Destino</th></tr></thead>
         <tbody id="tabelaCarimbos"></tbody>
       </table>
     </div>
@@ -570,8 +571,10 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 <div id="modalIniciarAuditoria" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;">
   <div class="card" style="max-width:400px;width:100%;">
     <h2>Iniciar auditoria</h2>
-    <p class="sub">Dados desse controle de serviço — o resto (vet., fazenda/retiro) dá pra preencher depois, a qualquer momento. Hora de início é registrada automaticamente.</p>
-    <label>Nº do Controle</label><input id="iaNumero" placeholder="Ex: 001">
+    <p class="sub">Fazenda Jaó. Cada retiro tem a sua própria contagem (Ord.) — dá pra auditar mais de um retiro no mesmo dia sem misturar. Hora de início é registrada automaticamente.</p>
+    <label>Retiro</label><input id="iaRetiro" placeholder="Ex: Retiro Sede" list="retirosList">
+    <datalist id="retirosList"></datalist>
+    <label style="margin-top:10px;">Nº do Controle</label><input id="iaNumero" placeholder="Ex: 001">
     <label style="margin-top:10px;">Data</label><input type="date" id="iaData">
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn-secondary" id="iaCancel">Cancelar</button>
@@ -712,10 +715,26 @@ function uid(){ return 'l' + Date.now() + Math.random().toString(36).slice(2,8);
    auditoria seja pausada e retomada num Controle de Serviço diferente — nunca reinicia
    em 1 só por causa de um novo Controle. Isso NÃO afeta o relatório do admin, que soma
    vários dias com um índice geral próprio (ver gerarIndiceGeral). */
-function maxOrdemLocalParaData(dataISO){
+const FAZENDA_PADRAO = "Jaó";
+function normRetiro(r){ return String(r||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase(); }
+function retirosConhecidos(){
+  const set = {};
+  servicosCache.forEach(s=>{ if(s.retiro && !set[normRetiro(s.retiro)]) set[normRetiro(s.retiro)] = s.retiro.trim(); });
+  return Object.values(set).sort();
+}
+function retiroDoAnimal(a){
+  if(a.retiro) return a.retiro;
+  const c = servicosCache.find(s=>s.id===a.controleId);
+  return (c && c.retiro) || "";
+}
+/* Ordem do dia é separada POR RETIRO: cada retiro tem sua própria sequência no dia,
+   então dá pra auditar dois retiros no mesmo dia sem cruzar a numeração. */
+function maxOrdemLocalParaData(dataISO, retiro){
   let maxOrd = 0;
+  const rN = normRetiro(retiro);
   servicosCache.forEach(s=>{
     if(s.data !== dataISO) return;
+    if(normRetiro(s.retiro) !== rN) return;
     try{
       const lista = JSON.parse(localStorage.getItem("animais_"+s.id) || "[]");
       lista.forEach(a=>{ const o = Number(a.ord)||0; if(o>maxOrd) maxOrd=o; });
@@ -723,12 +742,21 @@ function maxOrdemLocalParaData(dataISO){
   });
   return maxOrd;
 }
-async function calcularProximaOrdemParaData(dataISO){
-  let maxOrd = maxOrdemLocalParaData(dataISO);
+async function calcularProximaOrdemParaData(dataISO, retiro){
+  let maxOrd = maxOrdemLocalParaData(dataISO, retiro);
   if(navigator.onLine){
     try{
+      const rN = normRetiro(retiro);
+      // controles do dia (de todos os auditores) que são desse mesmo retiro
+      const snapC = await db.collection("controles").where("data","==",dataISO).get();
+      const idsRetiro = new Set(snapC.docs.filter(d=> normRetiro(d.data().retiro) === rN).map(d=>d.id));
       const snap = await db.collection("animais").where("data","==",dataISO).get();
-      snap.docs.forEach(d=>{ const o = Number(d.data().ord)||0; if(o>maxOrd) maxOrd=o; });
+      snap.docs.forEach(d=>{
+        const a = d.data();
+        const doRetiro = a.retiro!=null && a.retiro!=="" ? normRetiro(a.retiro)===rN : idsRetiro.has(a.controleId);
+        if(!doRetiro) return;
+        const o = Number(a.ord)||0; if(o>maxOrd) maxOrd=o;
+      });
     }catch(e){ console.error(e); }
   }
   return maxOrd+1;
@@ -892,30 +920,40 @@ function renderLista(listaTodas){
     const rotuloTipo = ROTULO_TIPO_AUDITORIA[s.tipoAuditoria||"curral"];
     div.innerHTML = `<div>
         <div style="font-weight:600;">Nº ${s.numero||"-"} — ${formatarDataBR(s.data)} <span style="font-weight:400;font-size:12px;color:var(--cinza);">· ${rotuloTipo}</span></div>
-        <div class="meta">Vet: ${s.vetResponsavel||"-"} · ${s.totalAnimais||0} animais</div>
+        <div class="meta">🏠 ${s.retiro||"Sem retiro"} · Vet: ${s.vetResponsavel||"-"} · ${s.totalAnimais||0} animais</div>
       </div><div>›</div>`;
     div.onclick = ()=> abrirServico(s.id);
     el.appendChild(div);
   });
 }
+function prepararModalIniciar(){
+  $("retirosList").innerHTML = retirosConhecidos().map(r=>`<option value="${r}">`).join("");
+  $("iaRetiro").value = "";
+}
 $("btnNovoServico").onclick = ()=>{
   tipoAuditoriaAtual = "curral";
+  prepararModalIniciar();
   $("iaNumero").value = String(configCache.proximoNumeroControle||1).padStart(3,"0");
   $("iaData").value = hojeLocalISO();
   $("modalIniciarAuditoria").classList.remove("hidden");
-  setTimeout(()=>{ const el=$("iaNumero"); if(el) el.focus(); }, 30);
+  setTimeout(()=>{ const el=$("iaRetiro"); if(el) el.focus(); }, 30);
 };
 $("iaCancel").onclick = ()=> $("modalIniciarAuditoria").classList.add("hidden");
 $("iaConfirm").onclick = async ()=>{
   const numero = $("iaNumero").value.trim();
   const data = $("iaData").value;
+  let retiro = $("iaRetiro").value.trim();
+  if(!retiro){ alert("Informe o retiro."); $("iaRetiro").focus(); return; }
+  // usa a mesma grafia de um retiro já cadastrado (evita "Sede" e "sede" virarem dois)
+  const existente = retirosConhecidos().find(r=> normRetiro(r)===normRetiro(retiro));
+  if(existente) retiro = existente;
   if(!data){ alert("Escolha uma data."); return; }
   $("modalIniciarAuditoria").classList.add("hidden");
 
   const id = uid();
   const dados = {
     numero, data, tipoAuditoria: tipoAuditoriaAtual,
-    fazenda:"", retiro:"",
+    fazenda: FAZENDA_PADRAO, retiro,
     vetResponsavel:"", responsavel:"",
     horaInicio: horaAgoraHHMM(), intervalo:"", retorno:"", horaTermino:"",
     totalAnimais:0, totalArrobas:0,
@@ -940,7 +978,7 @@ $("iaConfirm").onclick = async ()=>{
   $("origensList").innerHTML = "";
 
   if(tipoAuditoriaAtual === "confinamento"){
-    proximaOrdemDoDia = await calcularProximaOrdemParaData(data);
+    proximaOrdemDoDia = await calcularProximaOrdemParaData(data, retiro);
     showView("viewConfinamento");
     renderOperacaoCard();
     renderLinhasConfinamento();
@@ -950,7 +988,7 @@ $("iaConfirm").onclick = async ()=>{
 
   // ordem do dia é travada: sempre continua de onde parou nesse mesmo dia, mesmo que
   // seja um novo Controle de Serviço — nunca reinicia em 1 só porque abriu um controle novo
-  proximaOrdemDoDia = await calcularProximaOrdemParaData(data);
+  proximaOrdemDoDia = await calcularProximaOrdemParaData(data, retiro);
 
   // vai direto pro assistente por etapas, igual ao Audita Certo
   novoWizardAnimal();
@@ -972,10 +1010,11 @@ const DESC_MODO_FORA_CURRAL = {
 };
 function iniciarModoForaCurral(modo){
   tipoAuditoriaAtual = modo;
+  prepararModalIniciar();
   $("iaNumero").value = String(configCache.proximoNumeroControle||1).padStart(3,"0");
   $("iaData").value = hojeLocalISO();
   $("modalIniciarAuditoria").classList.remove("hidden");
-  setTimeout(()=>{ const el=$("iaNumero"); if(el) el.focus(); }, 30);
+  setTimeout(()=>{ const el=$("iaRetiro"); if(el) el.focus(); }, 30);
 }
 $("optModoAleijados").onclick = ()=> iniciarModoForaCurral("aleijados");
 $("optModoEnfermaria").onclick = ()=> iniciarModoForaCurral("enfermaria");
@@ -997,8 +1036,9 @@ function popularRacaConfinamento(){
   const sel = $("cfRaca");
   if(!sel) return;
   const atual = sel.value;
-  sel.innerHTML = RACAS_OPCOES.map(r=>`<option value="${r}">${r}</option>`).join("");
-  if(atual && RACAS_OPCOES.includes(atual)) sel.value = atual;
+  const racasConf = [...RACAS_OPCOES, "Mista"];
+  sel.innerHTML = racasConf.map(r=>`<option value="${r}">${r}</option>`).join("");
+  if(atual && racasConf.includes(atual)) sel.value = atual;
 }
 function renderLinhasConfinamento(){
   popularRacaConfinamento();
@@ -1024,7 +1064,7 @@ $("btnRegistrarLinha").onclick = ()=>{
   const ord = proximaOrdemDoDia;
   const registro = {
     id: uid(), controleId: servicoAtual.id, controleNumero: servicoAtual.numero||servicoAtual.id, ord,
-    data: servicoAtual.data, tipoAuditoria: "confinamento",
+    data: servicoAtual.data, retiro: servicoAtual.retiro||"", tipoAuditoria: "confinamento",
     raca, linha, lote, quantidade,
     categoria:"", origem:"", destino:"", carimbo:0, obs:"",
     status:"pendente", loteId:null, conferente1:null, conferente2:null, confAt:null,
@@ -1171,7 +1211,7 @@ async function abrirServico(id, novo=false){
   }
   tipoAuditoriaAtual = servicoAtual.tipoAuditoria || "curral";
   if(!novo){
-    proximaOrdemDoDia = await calcularProximaOrdemParaData(servicoAtual.data);
+    proximaOrdemDoDia = await calcularProximaOrdemParaData(servicoAtual.data, servicoAtual.retiro);
   }
   const origens = [...new Set(animaisAtual.map(a=>a.origem).filter(Boolean))];
   $("origensList").innerHTML = origens.map(o=>`<option value="${o}">`).join("");
@@ -1191,7 +1231,7 @@ async function abrirServico(id, novo=false){
 }
 function preencherFormServico(s){
   $("fNumero").value=s.numero||""; $("fData").value=s.data||"";
-  $("fFazenda").value=s.fazenda||""; $("fRetiro").value=s.retiro||"";
+  $("fFazenda").value=s.fazenda||FAZENDA_PADRAO; $("fRetiro").value=s.retiro||"";
   $("fVet").value=s.vetResponsavel||""; $("fResponsavel").value=s.responsavel||"";
 }
 ["fNumero","fData","fFazenda","fRetiro","fVet","fResponsavel"].forEach(c=> $(c).addEventListener("change", salvarCabecalho));
@@ -1199,7 +1239,7 @@ function salvarCabecalho(){
   if(!servicoAtual) return;
   const dados = {
     numero:$("fNumero").value, data:$("fData").value,
-    fazenda:$("fFazenda").value, retiro:$("fRetiro").value,
+    fazenda:$("fFazenda").value||FAZENDA_PADRAO, retiro:$("fRetiro").value,
     vetResponsavel:$("fVet").value, responsavel:$("fResponsavel").value
   };
   Object.assign(servicoAtual, dados);
@@ -1406,15 +1446,24 @@ function renderCarimbos(){
   let lista = carimbosAnimaisCache.filter(a=> a.tipoAuditoria!=="confinamento" && (parseFloat(a.carimbo)||0) > 0);
   if(fData) lista = lista.filter(a=> a.data === fData);
   if(fNum) lista = lista.filter(a=> normNumero(a.controleNumero).includes(fNum));
+  // filtro de retiro (lista de opções montada com os retiros existentes)
+  const selR = $("carimboFiltroRetiro");
+  const retAtual = selR.value;
+  const opcoesRet = [...new Set(carimbosAnimaisCache.map(a=>retiroDoAnimal(a)).filter(Boolean).concat(retirosConhecidos()))].sort();
+  selR.innerHTML = `<option value="">Todos os retiros</option>` + opcoesRet.map(r=>`<option value="${r}">${r}</option>`).join("");
+  if(opcoesRet.includes(retAtual)) selR.value = retAtual;
+  if(selR.value) lista = lista.filter(a=> normRetiro(retiroDoAnimal(a)) === normRetiro(selR.value));
+  // lote = carimbo + retiro (nunca mistura animais de retiros diferentes)
   const grupos = {};
   lista.forEach(a=>{
     const v = Math.round((parseFloat(a.carimbo)||0)*10)/10;
-    const k = String(v);
-    if(!grupos[k]) grupos[k] = { valor:v, n:0, animais:[] };
+    const ret = retiroDoAnimal(a) || "Sem retiro";
+    const k = String(v) + "|" + normRetiro(ret);
+    if(!grupos[k]) grupos[k] = { valor:v, retiro:ret, n:0, animais:[] };
     grupos[k].n++;
     grupos[k].animais.push(a);
   });
-  const linhas = Object.values(grupos).sort((a,b)=> a.valor-b.valor);
+  const linhas = Object.values(grupos).sort((a,b)=> a.valor-b.valor || a.retiro.localeCompare(b.retiro));
   gruposCarimboAtuais = linhas;
   const fmt = v=> v.toLocaleString("pt-BR",{maximumFractionDigits:1});
   const resumoCampo = (anims, campo)=>{
@@ -1429,7 +1478,7 @@ function renderCarimbos(){
     const destino = destVals.join(", ");
     const extra = (!travado && pend<g.n) ? `<div class="meta">${pend} sem origem/destino</div>` : "";
     return `<tr data-grupo="${i}" style="cursor:${travado?"default":"pointer"};">
-      <td><strong>${fmt(g.valor)} @</strong></td><td>${g.n} ${g.n===1?"animal":"animais"}</td><td>${fmt(g.valor*g.n)}</td>
+      <td><strong>${fmt(g.valor)} @</strong></td><td>${g.retiro}</td><td>${g.n} ${g.n===1?"animal":"animais"}</td><td>${fmt(g.valor*g.n)}</td>
       <td>${travado?"🔒 ":""}${origem || (travado?"—":"<span style='color:var(--cinza);'>toque pra lançar</span>")}${extra}</td>
       <td>${travado?"🔒 ":""}${destino || (travado?"—":"")}</td></tr>`;
   }).join("");
@@ -1449,11 +1498,11 @@ function abrirLoteCarimbo(g){
   const pendentes = g.animais.filter(a=>!a.origemDestinoTravado);
   const fmt = v=> v.toLocaleString("pt-BR",{maximumFractionDigits:1});
   if(!pendentes.length){
-    alert(`🔒 O lote de ${fmt(g.valor)} @ já tem Origem e Destino lançados.\nPra alterar, fale com o administrador.`);
+    alert(`🔒 O lote de ${fmt(g.valor)} @ (${g.retiro}) já tem Origem e Destino lançados.\nPra alterar, fale com o administrador.`);
     return;
   }
   loteCarimboAtual = { valor:g.valor, animais:pendentes };
-  $("lcTitulo").textContent = `Lote ${fmt(g.valor)} @`;
+  $("lcTitulo").textContent = `Lote ${fmt(g.valor)} @ · ${g.retiro}`;
   const fData = $("carimboFiltroData").value;
   $("lcSub").textContent = `${pendentes.length} ${pendentes.length===1?"animal":"animais"} sem origem/destino${fData?` · ${formatarDataBR(fData)}`:" · todas as datas"}`;
   $("lcOrigem").value = "";
@@ -1517,6 +1566,7 @@ $("lcConfirm").onclick = ()=>{
 };
 $("carimboFiltroData").addEventListener("change", carregarCarimbos);
 $("carimboFiltroNumero").addEventListener("input", renderCarimbos);
+$("carimboFiltroRetiro").addEventListener("change", renderCarimbos);
 $("btnCarimboTudo").onclick = ()=>{ $("carimboFiltroData").value = ""; carregarCarimbos(); };
 
 /* ================= ASSISTENTE DE LANÇAMENTO (ETAPAS) ================= */
@@ -1633,7 +1683,7 @@ function renderWiz(){
     let cls="wiz-dot"; if(i<wizIdx) cls+=" done"; if(i===wizIdx) cls+=" current";
     return `<div class="${cls}" title="${s.label}"></div>`;
   }).join("");
-  $("topTitle").textContent = `Ord. ${proximaOrdemDoDia} · Passo ${wizIdx+1}/${WIZ_STEPS.length} — ${step.label}`;
+  $("topTitle").textContent = `${servicoAtual&&servicoAtual.retiro?servicoAtual.retiro+" · ":""}Ord. ${proximaOrdemDoDia} · Passo ${wizIdx+1}/${WIZ_STEPS.length} — ${step.label}`;
   $("wizStepContent").innerHTML = renderWizStep(step.key);
   bindWizStep(step.key);
   $("btnWizBack").textContent = wizIdx>0 ? "Voltar" : (animaisAtual.length>0 ? "✕ Fechar" : "Cancelar");
@@ -1803,7 +1853,7 @@ function confirmarESalvarAnimal(){
   const ord = proximaOrdemDoDia; // sempre a sequência do DIA, travada — nunca reinicia por controle
   const animal = {
     id: uid(), controleId: servicoAtual.id, controleNumero: servicoAtual.numero||servicoAtual.id, ord,
-    data: servicoAtual.data, tipoAuditoria: tipoAuditoriaAtual, raca: wizData.raca, categoria: wizData.categoria,
+    data: servicoAtual.data, retiro: servicoAtual.retiro||"", tipoAuditoria: tipoAuditoriaAtual, raca: wizData.raca, categoria: wizData.categoria,
     origem: "", destino: "", pasto: "", carimbo, // origem/destino/pasto vêm no fim do manejo
     obs: (wizData.obs||"").trim(), status:"pendente", loteId:null, conferente1:null, conferente2:null, confAt:null,
     criadoPor: currentUser.uid, criadoPorNome: currentAuditorNome || currentUser.email,
@@ -1914,23 +1964,41 @@ $("btnExportExcel").onclick = ()=>{
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Controle");
   XLSX.writeFile(wb, nomeArquivo("xlsx"));
 };
-$("btnExportPDF").onclick = ()=>{
+$("btnExportPDF").onclick = async ()=>{
   const s = servicoAtual;
-  const { jsPDF } = window.jspdf; const doc = new jsPDF();
-  let y = adicionarLogoCabecalho(doc, "CONTROLE DE SERVIÇO", `Nº ${s.numero||"—"} · ${s.data||""}`);
-  doc.setFontSize(9); doc.setTextColor(0,0,0);
-  const linhas = [
-    `Fazenda: ${s.fazenda||"—"}   Retiro: ${s.retiro||"—"}   Vet.: ${s.vetResponsavel||"—"}`,
-    `Início: ${s.horaInicio||"—"}  Intervalo: ${s.intervalo||"—"}  Retorno: ${s.retorno||"—"}  Término: ${s.horaTermino||"—"}`,
-    `Total: ${$("cTotal").textContent}  Total @: ${$("cArrobas").textContent}  Animais/Hora: ${$("cAnimaisHora").textContent}`,
-    `Confinamento: ${$("cConf").textContent}  Recria: ${$("cRecria").textContent}  Refugo: ${$("cRefugo").textContent}  Outros: ${$("cOutro").textContent}`
-  ];
-  doc.text(linhas, 14, y);
-  doc.autoTable({ startY:y+22, head:[["Ord.","Raça","Categoria","Origem","Destino","Pasto","@ Carimbo","Status","Obs."]],
-    body: animaisAtual.map(a=>[a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,a.status==="pendente"?"Pendente":"Solto",a.obs]), styles:{fontSize:8} });
-  doc.save(nomeArquivo("pdf"));
+  if(!animaisAtual.length){ alert("Nenhum lançamento pra exportar."); return; }
+  const lista = animaisAtual.slice().sort((a,b)=>(Number(a.ord)||0)-(Number(b.ord)||0)).map((a,i)=>({...a, indiceGeral:i+1}));
+  const capa = (doc)=>{
+    let y = adicionarLogoCabecalho(doc, "CONTROLE DE SERVIÇO", `Nº ${s.numero||"—"} · ${formatarDataBR(s.data)} · Fazenda ${s.fazenda||FAZENDA_PADRAO} · Retiro ${s.retiro||"—"}`);
+    const totalAnimais = somaAnimaisControle();
+    const linhas = [
+      ["Nº do Controle", s.numero||"—"], ["Data", formatarDataBR(s.data)||"—"],
+      ["Fazenda", s.fazenda||FAZENDA_PADRAO], ["Retiro", s.retiro||"—"],
+      ["Tipo de auditoria", (ROTULO_TIPO_AUDITORIA[s.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,"")],
+      ["Vet. Responsável", s.vetResponsavel||"—"], ["Qnt. Pas. / Responsável", s.responsavel||"—"],
+      ["Auditor", s.criadoPorNome||currentAuditorNome||"—"],
+      ["Hora início", s.horaInicio||"—"], ["Pausa", s.intervalo ? `${s.intervalo}${s.motivoPausa?` (${s.motivoPausa})`:""}` : "—"],
+      ["Retorno", s.retorno||"—"], ["Hora término", s.horaTermino||"—"],
+      ["Pasto", s.pasto||"—"],
+      ["Total de animais", String(totalAnimais)], ["Total @ (carimbo)", somaArrobas().toFixed(1)],
+      ["Animais/hora", $("cAnimaisHora").textContent],
+      ["Confinamento", $("cConf").textContent], ["Recria", $("cRecria").textContent],
+      ["Refugo", $("cRefugo").textContent], ["Outros destinos", $("cOutro").textContent],
+      ["Aguardando soltura", $("cPendentes").textContent]
+    ];
+    // duas colunas lado a lado pra caber numa página só
+    const meio = Math.ceil(linhas.length/2);
+    const estilo = { theme:"grid", styles:{fontSize:9, cellPadding:2.2}, headStyles:{fillColor:[24,38,25], textColor:255},
+      columnStyles:{0:{fontStyle:"bold", cellWidth:52}} };
+    doc.autoTable({ ...estilo, startY:y+2, head:[["DADOS DO CONTROLE",""]], body: linhas.slice(0,meio), margin:{left:14, right:152} });
+    doc.autoTable({ ...estilo, startY:y+2, head:[["PRODUÇÃO E RESUMO",""]], body: linhas.slice(meio), margin:{left:152, right:14} });
+  };
+  await gerarRelatorioPDFCompleto(lista, {
+    capa, semPorDia: true,
+    titulo: `CONTROLE DE SERVIÇO Nº ${s.numero||"—"} — ${s.retiro||""} · ${formatarDataBR(s.data)} (${somaAnimaisControle()} animais)`,
+    arquivo: nomeArquivo("pdf")
+  });
 };
-
 /* ================= PDF TALÃO (layout do formulário impresso GestPec) ================= */
 $("btnExportTalao").onclick = ()=>{
   const s = servicoAtual;
@@ -2707,8 +2775,15 @@ async function desenharPaginaGraficoRelatorio(doc, spec){
 $("btnAdminExportPDF").onclick = async ()=>{
   const lista = listaOrdenadaComIndiceGeral();
   if(!lista.length){ alert("Nenhum lançamento pra exportar."); return; }
+  await gerarRelatorioPDFCompleto(lista, { titulo:`CONTROLE DE SERVIÇO — GERAL (${lista.length} animais)`, arquivo:"Controle_Servico_Geral.pdf" });
+};
+/* Relatório completo (páginas de gráfico + tabela). Usado pelo admin (todos os lançamentos
+   filtrados) e pelo auditor (só o controle aberto — com uma página de capa com os dados do
+   controle). */
+async function gerarRelatorioPDFCompleto(lista, opts){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation:"landscape", format:"a4" });
+  if(opts.capa){ opts.capa(doc); doc.addPage("a4","landscape"); }
 
   if(typeof Chart !== "undefined"){
     const porDia = contarPorDia(lista);
@@ -2716,28 +2791,36 @@ $("btnAdminExportPDF").onclick = async ()=>{
     const porRaca = contarPor(lista, "raca");
     const porCategoria = contarPor(lista, "categoria");
     const porTipo = contarPorTipoAuditoria(lista);
+    const porCarimbo = {};
+    lista.filter(a=>a.tipoAuditoria!=="confinamento" && (parseFloat(a.carimbo)||0)>0).forEach(a=>{
+      const k = (Math.round((parseFloat(a.carimbo)||0)*10)/10).toLocaleString("pt-BR") + " @";
+      porCarimbo[k] = (porCarimbo[k]||0) + 1;
+    });
     const specs = [
-      { titulo:"Animais por dia", rotuloContagem:"DIAS", labels:porDia.map(p=>p[0].split("-").reverse().join("/")), data:porDia.map(p=>p[1]) },
+      opts.semPorDia ? null : { titulo:"Animais por dia", rotuloContagem:"DIAS", labels:porDia.map(p=>p[0].split("-").reverse().join("/")), data:porDia.map(p=>p[1]) },
       { titulo:"Por destino", rotuloContagem:"DESTINOS", labels:Object.keys(porDestino), data:Object.values(porDestino) },
       { titulo:"Por raça", rotuloContagem:"RAÇAS", labels:Object.keys(porRaca), data:Object.values(porRaca) },
       { titulo:"Por categoria", rotuloContagem:"CATEGORIAS", labels:Object.keys(porCategoria), data:Object.values(porCategoria) },
       { titulo:"Por tipo de operação", rotuloContagem:"TIPOS", labels:Object.keys(porTipo), data:Object.values(porTipo),
         observacao:"Curral, Aleijados, Enfermaria e Confinamento — cada linha de Confinamento conta pela quantidade total informada, não como 1 lançamento. Todos somados juntos no total geral." },
+      { titulo:"Por carimbo", rotuloContagem:"CARIMBOS", labels:Object.keys(porCarimbo), data:Object.values(porCarimbo),
+        observacao:"Quantidade de animais em cada carimbo (@). Linhas de Confinamento não têm carimbo e ficam fora deste gráfico." },
     ];
-    for(let i=0; i<specs.length; i++){
+    const specsValidos = specs.filter(Boolean);
+    for(let i=0; i<specsValidos.length; i++){
       if(i>0) doc.addPage("a4","landscape");
-      await desenharPaginaGraficoRelatorio(doc, specs[i]);
+      await desenharPaginaGraficoRelatorio(doc, specsValidos[i]);
     }
     doc.addPage("a4","landscape");
   }
 
   doc.setFontSize(14); doc.setTextColor(0,0,0); doc.setFont(undefined,"bold");
-  doc.text(`CONTROLE DE SERVIÇO — GERAL (${lista.length} animais)`, 14, 15);
+  doc.text(opts.titulo, 14, 15);
   doc.setFont(undefined,"normal");
-  doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Tipo","Raça","Categoria","Destino","@","Local","Status","Auditor"]],
-    body: lista.map(a=>[a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",destinoComDetalhe(a),a.carimbo,descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome]), styles:{fontSize:6.5} });
-  doc.save("Controle_Servico_Geral.pdf");
-};
+  doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Ord.","Tipo","Raça","Categoria","Origem","Destino","Pasto","@","Local","Status","Auditor","Obs."]],
+    body: lista.map(a=>[a.indiceGeral,formatarDataBR(a.data),a.controleNumero,a.ord,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome||"",a.obs||""]), styles:{fontSize:6.5} });
+  doc.save(opts.arquivo);
+}
 
 /* ---- editar lançamento (admin) ---- */
 $("adminEditSearch").addEventListener("input", ()=>{
@@ -2756,7 +2839,7 @@ $("adminEditSearch").addEventListener("input", ()=>{
 let animalEditandoAdmin = null;
 function abrirAdminEdit(a){
   animalEditandoAdmin = a;
-  $("aeRaca").innerHTML = RACAS_OPCOES.map(r=>`<option value="${r}">${r}</option>`).join("");
+  $("aeRaca").innerHTML = [...RACAS_OPCOES, "Mista"].map(r=>`<option value="${r}">${r}</option>`).join("");
   $("aeRaca").value=a.raca; $("aeOrigem").value=a.origem||"";
   $("aeCategoria").innerHTML = CATEGORIAS_OPCOES.map(c=>`<option value="${c}">${c}</option>`).join("");
   $("aeCategoria").value=a.categoria||"";
