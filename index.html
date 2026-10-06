@@ -116,6 +116,8 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 .chip-row{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px;}
 .chip{background:#fff;border:1px solid var(--borda);border-radius:16px;padding:7px 13px;font-size:12.5px;font-weight:600;color:var(--cinza);cursor:pointer;}
 .chip:active{background:var(--cinza-claro);}
+.chip.on{background:var(--verde);border-color:var(--verde);color:#fff;}
+.chip.mini{padding:5px 11px;font-size:11.5px;background:transparent;}
 .wiz-bottom{display:flex;gap:8px;margin-top:18px;}
 .wiz-bottom button{flex:1;padding:13px;font-size:14.5px;}
 .err-banner{background:#fee2e2;border:2px solid var(--vermelho);color:#991b1b;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;font-weight:700;}
@@ -389,8 +391,9 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   <div id="adminVisaoView">
     <div class="card">
       <h2>Filtros</h2>
+      <label>Retiro</label>
+      <div id="retiroChecklist" style="margin-bottom:12px;"></div>
       <div class="grid">
-        <div><label>Retiro</label><div id="retiroChecklist"></div></div>
         <div><label>De</label><input type="date" id="adminDataDe"></div>
         <div><label>Até</label><input type="date" id="adminDataAte"></div>
       </div>
@@ -507,6 +510,14 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   </div>
 
   <div id="adminAuditoresView" class="hidden">
+    <div class="card" style="border:2px solid #a9382f;">
+      <h2 style="color:#a9382f;">⚠ Zerar sistema (temporário)</h2>
+      <p class="sub">Apaga todos os lançamentos (animais) e controles de serviço de todos os auditores e volta o Nº do controle pra 001. Não tem como desfazer. Pede senha.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0;"><input type="checkbox" id="resetAuditores" style="width:auto;"> Também apagar os auditores cadastrados</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0;"><input type="checkbox" id="resetRetiros" style="width:auto;"> Também apagar os retiros cadastrados</label>
+      <button class="btn-danger btn-block" id="btnResetSistema" style="margin-top:8px;padding:12px;">🗑 Zerar todas as informações</button>
+      <p class="sub" id="resetStatus" style="margin-top:8px;"></p>
+    </div>
     <div class="card">
       <h2>Cadastrar novo auditor</h2>
       <div class="grid">
@@ -1645,6 +1656,13 @@ async function carregarConfig(){
       if(Array.isArray(d.destinos) && d.destinos.length) configCache.destinos = d.destinos;
       if(d.proximoNumeroControle) configCache.proximoNumeroControle = d.proximoNumeroControle;
       if(Array.isArray(d.retiros)) configCache.retiros = d.retiros;
+      if(d.resetEm && String(d.resetEm) !== (localStorage.getItem("cs_reset_visto")||"")){
+        // sistema foi zerado pelo admin: descarta o que este aparelho tinha guardado
+        // (inclusive a fila offline, pra não reenviar dados antigos)
+        const jaTinhaVisto = localStorage.getItem("cs_reset_visto");
+        limparDadosLocais(d.resetEm);
+        if(jaTinhaVisto !== null || servicosCache.length) console.info("Sistema zerado pelo administrador — dados locais limpos.");
+      }
     }
   }catch(e){ console.error(e); }
   DESTINOS_OPCOES = [...configCache.destinos, "Outro"];
@@ -1683,12 +1701,9 @@ async function abrirRetiros(){
   if(!isAdmin) return;
   renderRetirosConfig();
   if(navigator.onLine) await carregarConfig(); // sempre busca a lista atual do servidor
-  // aproveita retiros já usados em auditorias que ainda não estão na lista (só adiciona, nunca apaga)
+  // a lista é só a que o admin cadastrou (não re-adiciona retiros antigos — senão um retiro
+  // excluído voltava sozinho por ter auditoria antiga nele)
   configCache.retiros = configCache.retiros || [];
-  const usados = [...new Set((adminControlesCache||[]).map(c=>(c.retiro||"").trim()).filter(Boolean))];
-  usados.forEach(r=>{
-    if(!configCache.retiros.some(x=>normRetiro(x)===normRetiro(r))){ configCache.retiros.push(r); gravarRetiroServidor(r); }
-  });
   configCache.retiros.sort((a,b)=>a.localeCompare(b,"pt-BR"));
   renderRetirosConfig();
   setTimeout(()=>{ const el=$("novoRetiroInput"); if(el) el.focus(); }, 30);
@@ -1705,7 +1720,7 @@ function renderRetirosConfig(){
       if(!isAdmin) return;
       if(!confirm(`Remover o retiro "${r}" da lista?\n(As auditorias já feitas nele continuam salvas.)`)) return;
       configCache.retiros.splice(i,1);
-      renderRetirosConfig(); gravarRetiroServidor(r, true);
+      renderRetirosConfig(); gravarRetiroServidor(r, true).then(()=>{ if(navigator.onLine) carregarConfig().then(renderRetirosConfig); });
     };
     wrap.appendChild(row);
   });
@@ -2353,11 +2368,22 @@ async function carregarResumoAdmin(){
 
   // junta o retiro de cada animal a partir do controle que ele pertence (o retiro
   // fica salvo só no controle, não em cada lançamento individual)
+  // nome "oficial" do retiro: o cadastrado pelo admin; grafias diferentes (maiúscula,
+  // acento, espaço) do mesmo retiro são juntadas num só
+  const nomeOficial = {};
+  (configCache.retiros||[]).forEach(r=> nomeOficial[normRetiro(r)] = r);
+  const padronizar = (r)=>{
+    const t = String(r||"").normalize("NFC").trim();
+    if(!t) return "Sem retiro";
+    const k = normRetiro(t);
+    if(!nomeOficial[k]) nomeOficial[k] = t.charAt(0).toUpperCase() + t.slice(1);
+    return nomeOficial[k];
+  };
   const retiroPorControle = {};
-  adminControlesCache.forEach(c=> retiroPorControle[c.id] = c.retiro || "Sede");
-  adminAnimaisCache.forEach(a=> a._retiro = retiroPorControle[a.controleId] || "Sede");
+  adminControlesCache.forEach(c=> retiroPorControle[c.id] = padronizar(c.retiro));
+  adminAnimaisCache.forEach(a=> a._retiro = retiroPorControle[a.controleId] || padronizar(a.retiro));
 
-  const retirosUnicos = [...new Set(adminAnimaisCache.map(a=>a._retiro))].sort();
+  const retirosUnicos = [...new Set(adminAnimaisCache.map(a=>a._retiro))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
   if(adminRetirosSelecionados.size === 0) retirosUnicos.forEach(r=> adminRetirosSelecionados.add(r));
   renderRetiroChecklist(retirosUnicos);
 
@@ -2366,16 +2392,28 @@ async function carregarResumoAdmin(){
 function renderRetiroChecklist(retiros){
   const wrap = $("retiroChecklist"); wrap.innerHTML = "";
   if(!retiros.length){ wrap.innerHTML = `<p class="pending">Nenhum retiro ainda.</p>`; return; }
+  const todos = retiros.every(r=> adminRetirosSelecionados.has(r));
+  const row = document.createElement("div"); row.className = "chip-row"; row.style.marginTop = "4px";
+  const bTodos = document.createElement("button");
+  bTodos.type = "button"; bTodos.className = "chip mini"; bTodos.textContent = todos ? "Desmarcar todos" : "Marcar todos";
+  bTodos.onclick = ()=>{
+    adminRetirosSelecionados = todos ? new Set() : new Set(retiros);
+    renderRetiroChecklist(retiros); aplicarFiltrosAdmin();
+  };
+  row.appendChild(bTodos);
   retiros.forEach(r=>{
-    const lbl = document.createElement("label");
-    lbl.style.cssText = "display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px;";
-    lbl.innerHTML = `<input type="checkbox" ${adminRetirosSelecionados.has(r)?"checked":""}> ${r}`;
-    lbl.querySelector("input").onchange = (e)=>{
-      if(e.target.checked) adminRetirosSelecionados.add(r); else adminRetirosSelecionados.delete(r);
-      aplicarFiltrosAdmin();
+    const n = adminAnimaisCache.filter(a=>a._retiro===r).reduce((t,a)=>t+qtdAnimal(a),0);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip" + (adminRetirosSelecionados.has(r) ? " on" : "");
+    b.innerHTML = `${adminRetirosSelecionados.has(r)?"✓ ":""}${r} <span style="opacity:.75;font-weight:500;">(${n})</span>`;
+    b.onclick = ()=>{
+      if(adminRetirosSelecionados.has(r)) adminRetirosSelecionados.delete(r); else adminRetirosSelecionados.add(r);
+      renderRetiroChecklist(retiros); aplicarFiltrosAdmin();
     };
-    wrap.appendChild(lbl);
+    row.appendChild(b);
   });
+  wrap.appendChild(row);
 }
 function adminListaFiltrada(){
   const de = $("adminDataDe").value, ate = $("adminDataAte").value;
@@ -2399,7 +2437,7 @@ $("adminDataDe").addEventListener("change", aplicarFiltrosAdmin);
 $("adminDataAte").addEventListener("change", aplicarFiltrosAdmin);
 $("btnLimparFiltrosAdmin").onclick = ()=>{
   $("adminDataDe").value=""; $("adminDataAte").value="";
-  const retirosUnicos = [...new Set(adminAnimaisCache.map(a=>a._retiro))].sort();
+  const retirosUnicos = [...new Set(adminAnimaisCache.map(a=>a._retiro))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
   adminRetirosSelecionados = new Set(retirosUnicos);
   renderRetiroChecklist(retirosUnicos);
   aplicarFiltrosAdmin();
@@ -2987,6 +3025,72 @@ $("aeSave").onclick = async ()=>{
     alert("Lançamento atualizado.");
   }catch(e){ console.error(e); alert("Erro ao salvar."); }
 };
+
+/* ---- ZERAR SISTEMA (botão temporário, só admin, com senha) ---- */
+const SENHA_RESET = "369258";
+async function apagarColecaoInteira(nome, onProgress){
+  let total = 0;
+  while(true){
+    const snap = await db.collection(nome).limit(400).get();
+    if(snap.empty) break;
+    const batch = db.batch();
+    snap.docs.forEach(d=> batch.delete(d.ref));
+    await batch.commit();
+    total += snap.size;
+    if(onProgress) onProgress(total);
+  }
+  return total;
+}
+$("btnResetSistema").onclick = async ()=>{
+  if(!isAdmin) return;
+  if(!navigator.onLine){ alert("Precisa estar online pra zerar o sistema."); return; }
+  const senha = prompt("Digite a senha pra zerar o sistema:");
+  if(senha === null) return;
+  if(senha.trim() !== SENHA_RESET){ alert("Senha incorreta."); return; }
+  const apagaAud = $("resetAuditores").checked, apagaRet = $("resetRetiros").checked;
+  const extras = [apagaAud ? "auditores" : "", apagaRet ? "retiros" : ""].filter(Boolean).join(" e ");
+  if(!confirm(`Tem certeza? Vai apagar TODOS os animais e controles${extras ? " + "+extras : ""}. Não dá pra desfazer.`)) return;
+  const st = $("resetStatus");
+  $("btnResetSistema").disabled = true;
+  try{
+    st.textContent = "Apagando animais...";
+    const nA = await apagarColecaoInteira("animais", n=> st.textContent = `Apagando animais... ${n}`);
+    st.textContent = "Apagando controles...";
+    const nC = await apagarColecaoInteira("controles", n=> st.textContent = `Apagando controles... ${n}`);
+    let nAud = 0;
+    if(apagaAud){ st.textContent = "Apagando auditores..."; nAud = await apagarColecaoInteira("auditores"); }
+    // marca o reset no config: os outros aparelhos limpam o que tiverem guardado localmente
+    const resetEm = Date.now();
+    const dadosCfg = { proximoNumeroControle: 1, resetEm };
+    if(apagaRet) dadosCfg.retiros = [];
+    await db.collection("config").doc("geral").set(dadosCfg, {merge:true});
+    configCache.proximoNumeroControle = 1;
+    if(apagaRet) configCache.retiros = [];
+    limparDadosLocais(resetEm);
+    st.textContent = `✅ Sistema zerado: ${nA} lançamentos e ${nC} controles apagados${apagaAud?`, ${nAud} auditores`:""}${apagaRet?", retiros apagados":""}.`;
+    alert(st.textContent + (apagaAud ? "\n\nObs: as contas de login (e-mail/senha) dos auditores continuam no Firebase Authentication — ao cadastrar de novo com a mesma senha, o app reaproveita." : ""));
+    await carregarResumoAdmin();
+    if(!$("adminAuditoresView").classList.contains("hidden")) renderAuditoresList();
+  }catch(e){
+    console.error(e);
+    st.textContent = "⚠ Erro ao zerar: " + (e.code==="permission-denied" ? "sem permissão nas regras do Firebase." : (e.message||e));
+    alert(st.textContent);
+  }finally{
+    $("btnResetSistema").disabled = false;
+  }
+};
+/* Limpa caches locais (controles, lançamentos, fila offline) — usado no reset e quando
+   este aparelho descobre que o sistema foi zerado em outro lugar */
+function limparDadosLocais(resetEm){
+  try{
+    Object.keys(localStorage).forEach(k=>{ if(k.startsWith("animais_")) localStorage.removeItem(k); });
+    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(FILA_KEY);
+    if(resetEm) localStorage.setItem("cs_reset_visto", String(resetEm));
+  }catch(e){}
+  servicosCache = []; filaOffline = []; animaisAtual = [];
+  atualizarStatusSync();
+}
 
 /* ---- auditores ---- */
 async function renderAuditoresList(){
