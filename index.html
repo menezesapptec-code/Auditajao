@@ -539,6 +539,19 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   </div>
 </div>
 
+<!-- ==================== AUDITOR: RETIROS (cadastro antes do manejo) ==================== -->
+<div id="viewRetiros" class="container hidden">
+  <div class="card">
+    <h2>Retiros da Fazenda Jaó</h2>
+    <p class="sub">Cadastre os retiros antes do manejo — na hora de iniciar a auditoria é só selecionar. Cada retiro tem sua contagem de animais separada.</p>
+    <div class="btn-row" style="margin-bottom:12px;">
+      <input id="novoRetiroInput" placeholder="Nome do retiro (ex: Retiro Sede)" style="flex:2;">
+      <button class="btn-primary" id="btnAddRetiro" style="flex:1;">+ Cadastrar</button>
+    </div>
+    <div id="retirosConfigList"></div>
+  </div>
+</div>
+
 <!-- ==================== AUDITOR: CONFIGURAÇÃO ==================== -->
 <div id="viewConfig" class="container hidden">
   <div class="card">
@@ -563,6 +576,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   <button data-target="lista" class="active"><div>📋</div>Controles</button>
   <button data-target="conferencia"><div>✅</div>Conferência</button>
   <button data-target="carimbos"><div>⚖</div>Carimbos</button>
+  <button data-target="retiros"><div>🏠</div>Retiros</button>
   <button data-target="config"><div>⚙</div>Config</button>
 </div>
 <!-- NAV ADMIN (sem barra inferior — painel único) -->
@@ -571,9 +585,9 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 <div id="modalIniciarAuditoria" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;">
   <div class="card" style="max-width:400px;width:100%;">
     <h2>Iniciar auditoria</h2>
-    <p class="sub">Fazenda Jaó. Cada retiro tem a sua própria contagem (Ord.) — dá pra auditar mais de um retiro no mesmo dia sem misturar. Hora de início é registrada automaticamente.</p>
-    <label>Retiro</label><input id="iaRetiro" placeholder="Ex: Retiro Sede" list="retirosList">
-    <datalist id="retirosList"></datalist>
+    <p class="sub">Fazenda Jaó. Escolha um dos retiros cadastrados. Cada retiro tem a sua própria contagem (Ord.) — dá pra auditar mais de um retiro no mesmo dia sem misturar. Hora de início é registrada automaticamente.</p>
+    <label>Retiro</label><select id="iaRetiro"></select>
+    <p class="sub hidden" id="iaSemRetiros" style="margin-top:6px;color:#a9382f;">Nenhum retiro cadastrado. Cadastre na aba 🏠 Retiros antes de iniciar.</p>
     <label style="margin-top:10px;">Nº do Controle</label><input id="iaNumero" placeholder="Ex: 001">
     <label style="margin-top:10px;">Data</label><input type="date" id="iaData">
     <div class="btn-row" style="margin-top:14px;">
@@ -767,7 +781,7 @@ function salvarCacheServicos(){ localStorage.setItem(CACHE_KEY, JSON.stringify(s
 function carregarCacheServicos(){ servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]"); }
 
 function showView(view){
-  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewCarimbos","viewConfig","viewAdmin","viewForaCurral","viewConfinamento","viewFotoLocal"].forEach(v=>$(v).classList.add("hidden"));
+  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewCarimbos","viewRetiros","viewConfig","viewAdmin","viewForaCurral","viewConfinamento","viewFotoLocal"].forEach(v=>$(v).classList.add("hidden"));
   $(view).classList.remove("hidden");
   const semNav = ["viewLogin","viewWizardAnimal","viewForaCurral","viewConfinamento","viewFotoLocal"].includes(view);
   $("navAuditor").classList.toggle("hidden", isAdmin || semNav);
@@ -858,6 +872,7 @@ document.querySelectorAll("#navAuditor button").forEach(b=>{
     if(b.dataset.target==="lista") abrirLista();
     else if(b.dataset.target==="conferencia") abrirConferencia();
     else if(b.dataset.target==="carimbos") abrirCarimbos();
+    else if(b.dataset.target==="retiros") abrirRetiros();
     else if(b.dataset.target==="config") abrirConfig();
   };
 });
@@ -927,8 +942,10 @@ function renderLista(listaTodas){
   });
 }
 function prepararModalIniciar(){
-  $("retirosList").innerHTML = retirosConhecidos().map(r=>`<option value="${r}">`).join("");
-  $("iaRetiro").value = "";
+  const lista = configCache.retiros || [];
+  $("iaRetiro").innerHTML = `<option value="">Selecione o retiro...</option>` + lista.map(r=>`<option value="${r}">${r}</option>`).join("");
+  $("iaRetiro").value = lista.length===1 ? lista[0] : "";
+  $("iaSemRetiros").classList.toggle("hidden", lista.length>0);
 }
 $("btnNovoServico").onclick = ()=>{
   tipoAuditoriaAtual = "curral";
@@ -943,7 +960,7 @@ $("iaConfirm").onclick = async ()=>{
   const numero = $("iaNumero").value.trim();
   const data = $("iaData").value;
   let retiro = $("iaRetiro").value.trim();
-  if(!retiro){ alert("Informe o retiro."); $("iaRetiro").focus(); return; }
+  if(!retiro){ alert((configCache.retiros||[]).length ? "Selecione o retiro." : "Cadastre os retiros na aba 🏠 Retiros antes de iniciar a auditoria."); return; }
   // usa a mesma grafia de um retiro já cadastrado (evita "Sede" e "sede" virarem dois)
   const existente = retirosConhecidos().find(r=> normRetiro(r)===normRetiro(retiro));
   if(existente) retiro = existente;
@@ -1583,7 +1600,8 @@ let DESTINOS_OPCOES = ["Confinamento","Recria","Refugo","Sequestro","Outro"]; //
 const OBS_CHIPS = ["Anelorado","Diz Anelorado","Não Brincado"];
 
 /* ================= CONFIGURAÇÃO (destinos + próximo nº de controle) ================= */
-let configCache = { destinos: ["Confinamento","Recria","Refugo","Sequestro"], proximoNumeroControle: 1 };
+let configCache = { destinos: ["Confinamento","Recria","Refugo","Sequestro"], proximoNumeroControle: 1, retiros: [] };
+try{ const r = JSON.parse(localStorage.getItem("cs_retiros") || "null"); if(Array.isArray(r)) configCache.retiros = r; }catch(e){}
 async function carregarConfig(){
   try{
     const doc = await db.collection("config").doc("geral").get();
@@ -1591,11 +1609,14 @@ async function carregarConfig(){
       const d = doc.data();
       if(Array.isArray(d.destinos) && d.destinos.length) configCache.destinos = d.destinos;
       if(d.proximoNumeroControle) configCache.proximoNumeroControle = d.proximoNumeroControle;
+      if(Array.isArray(d.retiros)) configCache.retiros = d.retiros;
     }
   }catch(e){ console.error(e); }
   DESTINOS_OPCOES = [...configCache.destinos, "Outro"];
+  try{ localStorage.setItem("cs_retiros", JSON.stringify(configCache.retiros||[])); }catch(e){}
 }
 async function salvarConfig(){
+  try{ localStorage.setItem("cs_retiros", JSON.stringify(configCache.retiros||[])); }catch(e){}
   try{ await db.collection("config").doc("geral").set(configCache, {merge:true}); }
   catch(e){ console.error(e); }
   DESTINOS_OPCOES = [...configCache.destinos, "Outro"];
@@ -1606,6 +1627,48 @@ async function abrirConfig(){
   renderDestinosConfig();
   $("proxNumeroControleInput").value = configCache.proximoNumeroControle;
 }
+/* ---- Retiros: cadastrados antes do manejo, só seleciona ao iniciar ---- */
+async function abrirRetiros(){
+  showView("viewRetiros"); setNavActive("retiros");
+  $("topTitle").textContent = "Retiros";
+  // primeira vez: aproveita os retiros que já foram usados em auditorias anteriores
+  if(!(configCache.retiros||[]).length && retirosConhecidos().length){
+    configCache.retiros = retirosConhecidos();
+    salvarConfig();
+  }
+  renderRetirosConfig();
+  setTimeout(()=>{ const el=$("novoRetiroInput"); if(el) el.focus(); }, 30);
+}
+function renderRetirosConfig(){
+  const wrap = $("retirosConfigList"); wrap.innerHTML = "";
+  const lista = configCache.retiros || [];
+  if(!lista.length){ wrap.innerHTML = `<p class="pending">Nenhum retiro cadastrado ainda.</p>`; return; }
+  lista.forEach((r,i)=>{
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `<div style="font-weight:600;">🏠 ${r}</div><button class="btn-danger" data-i="${i}">✕</button>`;
+    row.querySelector("button").onclick = ()=>{
+      if(!confirm(`Remover o retiro "${r}" da lista?\n(As auditorias já feitas nele continuam salvas.)`)) return;
+      configCache.retiros.splice(i,1);
+      renderRetirosConfig(); salvarConfig();
+    };
+    wrap.appendChild(row);
+  });
+}
+function adicionarRetiro(){
+  const v = $("novoRetiroInput").value.trim();
+  if(!v) return;
+  configCache.retiros = configCache.retiros || [];
+  if(configCache.retiros.some(r=> normRetiro(r)===normRetiro(v))){ alert("Esse retiro já está cadastrado."); return; }
+  configCache.retiros.push(v);
+  configCache.retiros.sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  $("novoRetiroInput").value = "";
+  renderRetirosConfig(); salvarConfig();
+  $("novoRetiroInput").focus();
+}
+$("btnAddRetiro").onclick = adicionarRetiro;
+$("novoRetiroInput").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); adicionarRetiro(); } });
+
 function renderDestinosConfig(){
   const wrap = $("destinosConfigList"); wrap.innerHTML = "";
   if(!configCache.destinos.length){ wrap.innerHTML = `<p class="pending">Nenhum destino cadastrado.</p>`; }
