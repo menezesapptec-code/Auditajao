@@ -529,6 +529,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
       <div class="counter-box"><div class="num" id="carimboTotalAnimais">0</div><div class="lbl">Animais</div></div>
       <div class="counter-box"><div class="num" id="carimboTotalArrobas">0</div><div class="lbl">Total @</div></div>
     </div>
+    <div id="carimboPorRaca" style="margin-bottom:12px;"></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Carimbo (@)</th><th>Retiro</th><th>Animais</th><th>Total @</th><th>Origem</th><th>Destino</th></tr></thead>
@@ -1457,6 +1458,17 @@ async function carregarCarimbos(){
   renderCarimbos();
 }
 let gruposCarimboAtuais = [];
+const ORDEM_RACAS_RESUMO = ["Nelore","Cruzado","Anelorado"];
+function contagemPorRaca(anims){
+  const m = {};
+  anims.forEach(a=>{ const r = (a.raca||"Sem raça").trim(); m[r] = (m[r]||0)+1; });
+  return Object.entries(m).sort((x,y)=>{
+    const ix = ORDEM_RACAS_RESUMO.indexOf(x[0]), iy = ORDEM_RACAS_RESUMO.indexOf(y[0]);
+    if(ix!==-1 || iy!==-1) return (ix===-1?99:ix) - (iy===-1?99:iy);
+    return y[1]-x[1];
+  });
+}
+function resumoRacas(anims){ return contagemPorRaca(anims).map(([r,n])=>`${r}: ${n}`).join(" · "); }
 function renderCarimbos(){
   const fData = $("carimboFiltroData").value;
   const fNum = normNumero($("carimboFiltroNumero").value);
@@ -1495,7 +1507,7 @@ function renderCarimbos(){
     const destino = destVals.join(", ");
     const extra = (!travado && pend<g.n) ? `<div class="meta">${pend} sem origem/destino</div>` : "";
     return `<tr data-grupo="${i}" style="cursor:${travado?"default":"pointer"};">
-      <td><strong>${fmt(g.valor)} @</strong></td><td>${g.retiro}</td><td>${g.n} ${g.n===1?"animal":"animais"}</td><td>${fmt(g.valor*g.n)}</td>
+      <td><strong>${fmt(g.valor)} @</strong></td><td>${g.retiro}</td><td>${g.n} ${g.n===1?"animal":"animais"}<div class="meta">${resumoRacas(g.animais)}</div></td><td>${fmt(g.valor*g.n)}</td>
       <td>${travado?"🔒 ":""}${origem || (travado?"—":"<span style='color:var(--cinza);'>toque pra lançar</span>")}${extra}</td>
       <td>${travado?"🔒 ":""}${destino || (travado?"—":"")}</td></tr>`;
   }).join("");
@@ -1505,6 +1517,11 @@ function renderCarimbos(){
   $("carimbosVazio").classList.toggle("hidden", linhas.length>0);
   $("carimboTotalAnimais").textContent = lista.length;
   $("carimboTotalArrobas").textContent = fmt(lista.reduce((t,a)=> t+(parseFloat(a.carimbo)||0), 0));
+  // total por raça (Nelore, Cruzado e qualquer outra que aparecer)
+  const porRaca = contagemPorRaca(lista);
+  $("carimboPorRaca").innerHTML = porRaca.length
+    ? `<div class="counters">${porRaca.map(([r,n])=>`<div class="counter-box"><div class="num">${n}</div><div class="lbl">${r}</div></div>`).join("")}</div>`
+    : "";
 }
 /* Lote de carimbo: aplica Origem + Destino em todos os animais daquele carimbo (no filtro
    atual) que ainda não têm. Depois disso fica travado no painel do auditor — só o admin
