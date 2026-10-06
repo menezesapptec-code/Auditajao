@@ -382,6 +382,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
       <button class="btn-secondary sub-tab active" id="atab-visao">Visão geral</button>
       <button class="btn-secondary sub-tab" id="atab-monitoramento">Monitoramento</button>
       <button class="btn-secondary sub-tab" id="atab-auditores">Auditores</button>
+      <button class="btn-secondary sub-tab" id="atab-retiros">🏠 Retiros</button>
     </div>
   </div>
 
@@ -493,6 +494,18 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     </div>
   </div>
 
+  <div id="adminRetirosView" class="hidden">
+    <div class="card">
+      <h2>Retiros da Fazenda Jaó</h2>
+      <p class="sub">Só o administrador cadastra. Os retiros aparecem pra todos os auditores na hora de iniciar a auditoria — é só selecionar. Cada retiro tem sua contagem de animais separada.</p>
+      <div class="btn-row" style="margin-bottom:12px;">
+        <input id="novoRetiroInput" placeholder="Nome do retiro (ex: Retiro Sede)" style="flex:2;">
+        <button class="btn-primary" id="btnAddRetiro" style="flex:1;">+ Cadastrar</button>
+      </div>
+      <div id="retirosConfigList"></div>
+    </div>
+  </div>
+
   <div id="adminAuditoresView" class="hidden">
     <div class="card">
       <h2>Cadastrar novo auditor</h2>
@@ -540,19 +553,6 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   </div>
 </div>
 
-<!-- ==================== AUDITOR: RETIROS (cadastro antes do manejo) ==================== -->
-<div id="viewRetiros" class="container hidden">
-  <div class="card">
-    <h2>Retiros da Fazenda Jaó</h2>
-    <p class="sub">Cadastre os retiros antes do manejo — na hora de iniciar a auditoria é só selecionar. Cada retiro tem sua contagem de animais separada.</p>
-    <div class="btn-row" style="margin-bottom:12px;">
-      <input id="novoRetiroInput" placeholder="Nome do retiro (ex: Retiro Sede)" style="flex:2;">
-      <button class="btn-primary" id="btnAddRetiro" style="flex:1;">+ Cadastrar</button>
-    </div>
-    <div id="retirosConfigList"></div>
-  </div>
-</div>
-
 <!-- ==================== AUDITOR: CONFIGURAÇÃO ==================== -->
 <div id="viewConfig" class="container hidden">
   <div class="card">
@@ -577,7 +577,6 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   <button data-target="lista" class="active"><div>📋</div>Controles</button>
   <button data-target="conferencia"><div>✅</div>Conferência</button>
   <button data-target="carimbos"><div>⚖</div>Carimbos</button>
-  <button data-target="retiros"><div>🏠</div>Retiros</button>
   <button data-target="config"><div>⚙</div>Config</button>
 </div>
 <!-- NAV ADMIN (sem barra inferior — painel único) -->
@@ -588,7 +587,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <h2>Iniciar auditoria</h2>
     <p class="sub">Fazenda Jaó. Escolha um dos retiros cadastrados. Cada retiro tem a sua própria contagem (Ord.) — dá pra auditar mais de um retiro no mesmo dia sem misturar. Hora de início é registrada automaticamente.</p>
     <label>Retiro</label><select id="iaRetiro"></select>
-    <p class="sub hidden" id="iaSemRetiros" style="margin-top:6px;color:#a9382f;">Nenhum retiro cadastrado. Cadastre na aba 🏠 Retiros antes de iniciar.</p>
+    <p class="sub hidden" id="iaSemRetiros" style="margin-top:6px;color:#a9382f;">Nenhum retiro cadastrado ainda. Peça pro administrador cadastrar os retiros no Painel Admin.</p>
     <label style="margin-top:10px;">Nº do Controle</label><input id="iaNumero" placeholder="Ex: 001">
     <label style="margin-top:10px;">Data</label><input type="date" id="iaData">
     <div class="btn-row" style="margin-top:14px;">
@@ -757,8 +756,10 @@ function maxOrdemLocalParaData(dataISO, retiro){
   });
   return maxOrd;
 }
+let infoOrdemDoDia = { qtd:0, retiro:"" };
 async function calcularProximaOrdemParaData(dataISO, retiro){
   let maxOrd = maxOrdemLocalParaData(dataISO, retiro);
+  const idsContados = new Set();
   if(navigator.onLine){
     try{
       const rN = normRetiro(retiro);
@@ -770,10 +771,17 @@ async function calcularProximaOrdemParaData(dataISO, retiro){
         const a = d.data();
         const doRetiro = a.retiro!=null && a.retiro!=="" ? normRetiro(a.retiro)===rN : idsRetiro.has(a.controleId);
         if(!doRetiro) return;
+        idsContados.add(d.id);
         const o = Number(a.ord)||0; if(o>maxOrd) maxOrd=o;
       });
     }catch(e){ console.error(e); }
   }
+  // conta também os do aparelho que ainda não subiram
+  servicosCache.forEach(s=>{
+    if(s.data !== dataISO || normRetiro(s.retiro) !== normRetiro(retiro)) return;
+    try{ JSON.parse(localStorage.getItem("animais_"+s.id) || "[]").forEach(a=> idsContados.add(a.id)); }catch(e){}
+  });
+  infoOrdemDoDia = { qtd: idsContados.size, retiro: retiro||"" };
   return maxOrd+1;
 }
 function salvarFilaLocal(){ localStorage.setItem(FILA_KEY, JSON.stringify(filaOffline)); }
@@ -782,7 +790,7 @@ function salvarCacheServicos(){ localStorage.setItem(CACHE_KEY, JSON.stringify(s
 function carregarCacheServicos(){ servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]"); }
 
 function showView(view){
-  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewCarimbos","viewRetiros","viewConfig","viewAdmin","viewForaCurral","viewConfinamento","viewFotoLocal"].forEach(v=>$(v).classList.add("hidden"));
+  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewCarimbos","viewConfig","viewAdmin","viewForaCurral","viewConfinamento","viewFotoLocal"].forEach(v=>$(v).classList.add("hidden"));
   $(view).classList.remove("hidden");
   const semNav = ["viewLogin","viewWizardAnimal","viewForaCurral","viewConfinamento","viewFotoLocal"].includes(view);
   $("navAuditor").classList.toggle("hidden", isAdmin || semNav);
@@ -812,6 +820,8 @@ async function processarFila(){
         await db.collection("controles").doc(op.id).set(op.dados, {merge:true});
       } else if(op.tipo==="novoAnimal" || op.tipo==="updAnimal"){
         await db.collection("animais").doc(op.id).set(op.dados, {merge:true});
+      } else if(op.tipo==="delAnimal"){
+        await db.collection("animais").doc(op.id).delete();
       }
       filaOffline = filaOffline.filter(f=>f!==op);
       salvarFilaLocal();
@@ -873,7 +883,6 @@ document.querySelectorAll("#navAuditor button").forEach(b=>{
     if(b.dataset.target==="lista") abrirLista();
     else if(b.dataset.target==="conferencia") abrirConferencia();
     else if(b.dataset.target==="carimbos") abrirCarimbos();
-    else if(b.dataset.target==="retiros") abrirRetiros();
     else if(b.dataset.target==="config") abrirConfig();
   };
 });
@@ -942,7 +951,16 @@ function renderLista(listaTodas){
     el.appendChild(div);
   });
 }
-function prepararModalIniciar(){
+function prepararModalIniciar(atualizar=true){
+  if(atualizar && navigator.onLine){
+    // busca a lista atual do servidor (cadastros feitos em outros aparelhos) e redesenha
+    carregarConfig().then(()=>{
+      if($("modalIniciarAuditoria").classList.contains("hidden")) return;
+      const sel = $("iaRetiro").value;
+      prepararModalIniciar(false);
+      if(sel && (configCache.retiros||[]).includes(sel)) $("iaRetiro").value = sel;
+    });
+  }
   const lista = configCache.retiros || [];
   $("iaRetiro").innerHTML = `<option value="">Selecione o retiro...</option>` + lista.map(r=>`<option value="${r}">${r}</option>`).join("");
   $("iaRetiro").value = lista.length===1 ? lista[0] : "";
@@ -961,7 +979,7 @@ $("iaConfirm").onclick = async ()=>{
   const numero = $("iaNumero").value.trim();
   const data = $("iaData").value;
   let retiro = $("iaRetiro").value.trim();
-  if(!retiro){ alert((configCache.retiros||[]).length ? "Selecione o retiro." : "Cadastre os retiros na aba 🏠 Retiros antes de iniciar a auditoria."); return; }
+  if(!retiro){ alert((configCache.retiros||[]).length ? "Selecione o retiro." : "Nenhum retiro cadastrado. Peça pro administrador cadastrar os retiros no Painel Admin."); return; }
   // usa a mesma grafia de um retiro já cadastrado (evita "Sede" e "sede" virarem dois)
   const existente = retirosConhecidos().find(r=> normRetiro(r)===normRetiro(retiro));
   if(existente) retiro = existente;
@@ -1632,11 +1650,26 @@ async function carregarConfig(){
   DESTINOS_OPCOES = [...configCache.destinos, "Outro"];
   try{ localStorage.setItem("cs_retiros", JSON.stringify(configCache.retiros||[])); }catch(e){}
 }
+let avisoPermissaoConfigMostrado = false;
+function avisarErroConfig(e){
+  console.error(e);
+  if(avisoPermissaoConfigMostrado) return;
+  avisoPermissaoConfigMostrado = true;
+  alert("⚠ Não foi possível salvar no servidor" + (e && e.code==="permission-denied" ? " (sem permissão nas regras do Firebase)" : "") + ".\nA alteração ficou só neste aparelho e não vai aparecer nos outros.");
+}
 async function salvarConfig(){
   try{ localStorage.setItem("cs_retiros", JSON.stringify(configCache.retiros||[])); }catch(e){}
-  try{ await db.collection("config").doc("geral").set(configCache, {merge:true}); }
-  catch(e){ console.error(e); }
+  // retiros NÃO vão aqui — são gravados item a item (arrayUnion/arrayRemove) pra um
+  // aparelho nunca apagar o que o outro cadastrou
+  try{ await db.collection("config").doc("geral").set({ destinos: configCache.destinos, proximoNumeroControle: configCache.proximoNumeroControle }, {merge:true}); }
+  catch(e){ avisarErroConfig(e); }
   DESTINOS_OPCOES = [...configCache.destinos, "Outro"];
+}
+async function gravarRetiroServidor(nome, remover){
+  try{ localStorage.setItem("cs_retiros", JSON.stringify(configCache.retiros||[])); }catch(e){}
+  const FV = firebase.firestore.FieldValue;
+  try{ await db.collection("config").doc("geral").set({ retiros: remover ? FV.arrayRemove(nome) : FV.arrayUnion(nome) }, {merge:true}); }
+  catch(e){ avisarErroConfig(e); }
 }
 async function abrirConfig(){
   showView("viewConfig"); setNavActive("config");
@@ -1645,14 +1678,18 @@ async function abrirConfig(){
   $("proxNumeroControleInput").value = configCache.proximoNumeroControle;
 }
 /* ---- Retiros: cadastrados antes do manejo, só seleciona ao iniciar ---- */
+/* Cadastro de retiros — só no painel do administrador */
 async function abrirRetiros(){
-  showView("viewRetiros"); setNavActive("retiros");
-  $("topTitle").textContent = "Retiros";
-  // primeira vez: aproveita os retiros que já foram usados em auditorias anteriores
-  if(!(configCache.retiros||[]).length && retirosConhecidos().length){
-    configCache.retiros = retirosConhecidos();
-    salvarConfig();
-  }
+  if(!isAdmin) return;
+  renderRetirosConfig();
+  if(navigator.onLine) await carregarConfig(); // sempre busca a lista atual do servidor
+  // aproveita retiros já usados em auditorias que ainda não estão na lista (só adiciona, nunca apaga)
+  configCache.retiros = configCache.retiros || [];
+  const usados = [...new Set((adminControlesCache||[]).map(c=>(c.retiro||"").trim()).filter(Boolean))];
+  usados.forEach(r=>{
+    if(!configCache.retiros.some(x=>normRetiro(x)===normRetiro(r))){ configCache.retiros.push(r); gravarRetiroServidor(r); }
+  });
+  configCache.retiros.sort((a,b)=>a.localeCompare(b,"pt-BR"));
   renderRetirosConfig();
   setTimeout(()=>{ const el=$("novoRetiroInput"); if(el) el.focus(); }, 30);
 }
@@ -1665,14 +1702,16 @@ function renderRetirosConfig(){
     row.className = "list-item";
     row.innerHTML = `<div style="font-weight:600;">🏠 ${r}</div><button class="btn-danger" data-i="${i}">✕</button>`;
     row.querySelector("button").onclick = ()=>{
+      if(!isAdmin) return;
       if(!confirm(`Remover o retiro "${r}" da lista?\n(As auditorias já feitas nele continuam salvas.)`)) return;
       configCache.retiros.splice(i,1);
-      renderRetirosConfig(); salvarConfig();
+      renderRetirosConfig(); gravarRetiroServidor(r, true);
     };
     wrap.appendChild(row);
   });
 }
 function adicionarRetiro(){
+  if(!isAdmin){ alert("Só o administrador cadastra retiros."); return; }
   const v = $("novoRetiroInput").value.trim();
   if(!v) return;
   configCache.retiros = configCache.retiros || [];
@@ -1680,7 +1719,7 @@ function adicionarRetiro(){
   configCache.retiros.push(v);
   configCache.retiros.sort((a,b)=>a.localeCompare(b,"pt-BR"));
   $("novoRetiroInput").value = "";
-  renderRetirosConfig(); salvarConfig();
+  renderRetirosConfig(); gravarRetiroServidor(v);
   $("novoRetiroInput").focus();
 }
 $("btnAddRetiro").onclick = adicionarRetiro;
@@ -1773,7 +1812,9 @@ function renderWiz(){
 function renderWizStep(key){
   const ordAtual = proximaOrdemDoDia;
   const errHtml = wizErr ? `<div class="err-banner">${wizErr}</div>` : "";
-  const locked = `<div class="locked-num">ORDEM DESTE LANÇAMENTO (do dia)<span class="big">${ordAtual}</span></div>`;
+  const infoSeq = (ordAtual>1 && infoOrdemDoDia.qtd>0 && animaisAtual.length===0)
+    ? `<div style="font-size:11.5px;font-weight:500;margin-top:4px;">Continua a sequência do dia no retiro ${infoOrdemDoDia.retiro}: já existem ${infoOrdemDoDia.qtd} lançamento(s) hoje nesse retiro.</div>` : "";
+  const locked = `<div class="locked-num">ORDEM DESTE LANÇAMENTO (do dia${servicoAtual&&servicoAtual.retiro?" · "+servicoAtual.retiro:""})<span class="big">${ordAtual}</span>${infoSeq}</div>`;
   if(key==="raca"){
     return `${wizIdx===0?locked:""}<h2>Raça</h2>${errHtml}
       <div class="opt-grid" id="optRaca">
@@ -1973,8 +2014,18 @@ function excluirAnimal(id){
   // não renumera o Ord. dos que sobraram — a Ordem é travada pela sequência do dia,
   // não pela posição dentro da lista deste controle
   localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
-  // marca exclusão como "updAnimal" com status removido não é ideal; deleta direto se online, senão ignora offline-delete (edge case raro)
-  if(navigator.onLine) db.collection("animais").doc(id).delete().catch(console.error);
+  // tira da fila qualquer envio pendente desse animal (senão ele "volta" quando sincronizar)
+  // e agenda a exclusão no servidor — feita na hora se tiver internet, ou quando voltar
+  filaOffline = filaOffline.filter(op=> op.id !== id);
+  filaOffline.push({tipo:"delAnimal", id});
+  salvarFilaLocal(); processarFila();
+  const totais = {totalAnimais:somaAnimaisControle(), totalArrobas:somaArrobas()};
+  Object.assign(servicoAtual, totais);
+  const idxS = servicosCache.findIndex(s=>s.id===servicoAtual.id);
+  if(idxS>=0) Object.assign(servicosCache[idxS], totais);
+  salvarCacheServicos();
+  filaOffline.push({tipo:"updServico", id:servicoAtual.id, dados:totais});
+  salvarFilaLocal(); processarFila();
   renderTabela();
 }
 function somaArrobas(){ return animaisAtual.reduce((t,a)=> t+(parseFloat(a.carimbo)||0),0); }
@@ -2270,20 +2321,17 @@ $("medSave").onclick = async ()=>{
 };
 
 /* ================= ADMIN ================= */
-$("atab-visao").onclick = ()=>{
-  $("atab-visao").classList.add("active"); $("atab-monitoramento").classList.remove("active"); $("atab-auditores").classList.remove("active");
-  $("adminVisaoView").classList.remove("hidden"); $("adminMonitoramentoView").classList.add("hidden"); $("adminAuditoresView").classList.add("hidden");
-};
-$("atab-monitoramento").onclick = ()=>{
-  $("atab-monitoramento").classList.add("active"); $("atab-visao").classList.remove("active"); $("atab-auditores").classList.remove("active");
-  $("adminMonitoramentoView").classList.remove("hidden"); $("adminVisaoView").classList.add("hidden"); $("adminAuditoresView").classList.add("hidden");
-  renderMonitoramento();
-};
-$("atab-auditores").onclick = ()=>{
-  $("atab-auditores").classList.add("active"); $("atab-visao").classList.remove("active"); $("atab-monitoramento").classList.remove("active");
-  $("adminAuditoresView").classList.remove("hidden"); $("adminVisaoView").classList.add("hidden"); $("adminMonitoramentoView").classList.add("hidden");
-  renderAuditoresList();
-};
+const ADMIN_ABAS = { visao:"adminVisaoView", monitoramento:"adminMonitoramentoView", auditores:"adminAuditoresView", retiros:"adminRetirosView" };
+function abrirAbaAdmin(aba){
+  Object.entries(ADMIN_ABAS).forEach(([k,view])=>{
+    $("atab-"+k).classList.toggle("active", k===aba);
+    $(view).classList.toggle("hidden", k!==aba);
+  });
+  if(aba==="monitoramento") renderMonitoramento();
+  if(aba==="auditores") renderAuditoresList();
+  if(aba==="retiros") abrirRetiros();
+}
+Object.keys(ADMIN_ABAS).forEach(k=> $("atab-"+k).onclick = ()=> abrirAbaAdmin(k));
 
 async function abrirAdmin(){
   showView("viewAdmin");
