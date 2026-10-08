@@ -119,6 +119,18 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 .chip.on{background:var(--verde);border-color:var(--verde);color:#fff;}
 .chip.mini{padding:5px 11px;font-size:11.5px;background:transparent;}
 .wiz-bottom{display:flex;gap:8px;margin-top:18px;}
+#viewWizardAnimal.container{max-width:1280px;}
+.wiz-layout{display:grid;grid-template-columns:1fr;gap:14px;align-items:start;}
+@media(min-width:900px){.wiz-layout{grid-template-columns:minmax(0,1fr) 300px;}}
+.hist-item{border:1px solid var(--borda);border-radius:10px;padding:9px 11px;margin-bottom:8px;cursor:pointer;background:#fff;}
+.hist-item:hover{border-color:var(--verde);}
+.hist-item .t{font-weight:700;font-size:14px;}
+.hist-item .m{font-size:12px;color:var(--cinza);margin-top:2px;}
+.hist-item.lock{cursor:default;opacity:.75;}
+.res-row{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px dashed var(--borda);}
+.res-row:last-child{border-bottom:none;}
+tr.editavel{cursor:pointer;}
+tr.editavel:hover td{background:#f4faf6;}
 .wiz-bottom button{flex:1;padding:13px;font-size:14.5px;}
 .err-banner{background:#fee2e2;border:2px solid var(--vermelho);color:#991b1b;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;font-weight:700;}
 .rev-row{display:flex;justify-content:space-between;align-items:center;padding:11px 12px;border-bottom:1px solid var(--borda);font-size:14px;cursor:pointer;}
@@ -198,7 +210,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <h2>Operação de hoje</h2>
     <div class="stat-mini"><span>Status</span><span id="opStatusLblConf">—</span></div>
     <div class="stat-mini"><span>Início</span><span id="opInicioLblConf">—</span></div>
-    <div class="stat-mini hidden" id="opIntervaloRowConf"><span>Parou</span><span id="opIntervaloLblConf">—</span></div>
+    <div class="hidden" id="opIntervaloRowConf"><span id="opIntervaloLblConf"></span></div>
     <div class="stat-mini hidden" id="opRetornoRowConf"><span>Retomou</span><span id="opRetornoLblConf">—</span></div>
     <div class="stat-mini hidden" id="opTerminoRowConf"><span>Terminou</span><span id="opTerminoLblConf">—</span></div>
     <button class="btn-secondary btn-block" id="btnPausarOperacaoConf" style="margin-top:10px;">⏸ Pausar operação</button>
@@ -260,6 +272,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
       <div><label>Retiro 🔒</label><input id="fRetiro" readonly style="background:#f3f3f0;" title="Definido ao iniciar a auditoria — cada retiro tem contagem separada"></div>
       <div><label>Vet. Responsável</label><input id="fVet" placeholder="Nome"></div>
       <div><label>Qnt. Pas. / Responsável</label><input id="fResponsavel" placeholder="Nome"></div>
+      <div class="full"><label>📍 Origem dos animais deste manejo</label><input id="fOrigem" placeholder="Ex: Pasto 3 — vale pra todos os animais deste controle" list="origensList"></div>
     </div>
   </div>
 
@@ -267,7 +280,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <h2>Operação de hoje</h2>
     <div class="stat-mini"><span>Status</span><span id="opStatusLbl">—</span></div>
     <div class="stat-mini"><span>Início</span><span id="opInicioLbl">—</span></div>
-    <div class="stat-mini hidden" id="opIntervaloRow"><span>Parou</span><span id="opIntervaloLbl">—</span></div>
+    <div class="hidden" id="opIntervaloRow"><span id="opIntervaloLbl"></span></div>
     <div class="stat-mini hidden" id="opRetornoRow"><span>Retomou</span><span id="opRetornoLbl">—</span></div>
     <div class="stat-mini hidden" id="opTerminoRow"><span>Terminou</span><span id="opTerminoLbl">—</span></div>
     <button class="btn-primary btn-block hidden" id="btnFinalizarOperacao" style="margin-top:10px;">🏁 Finalizar operação</button>
@@ -290,7 +303,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 
   <div class="card">
     <h2>Lançar animal</h2>
-    <p class="sub">Passa pelas etapas (Raça, Categoria, Carimbo, Obs) e entra como <strong>pendente</strong>. Origem e Destino são informados depois, na aba Carimbos, por lote de carimbo — some pra "Conferência" pra selecionar o lote e soltar.</p>
+    <p class="sub">Passa pelas etapas (Raça, Categoria, Carimbo, Obs) e entra como <strong>pendente</strong>. A Origem é preenchida uma vez em "Dados do Controle" e vale pra todos; o Destino é lançado depois, na aba Carimbos, por lote de carimbo — some pra "Conferência" pra selecionar o lote e soltar.</p>
     <datalist id="origensList"></datalist>
     <button class="btn-primary btn-block" id="btnAbrirWizardAnimal" style="padding:16px;font-size:16px;">+ Adicionar Animal (Ord. <span id="proxOrd">1</span>)</button>
   </div>
@@ -322,7 +335,8 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 
 <!-- ==================== AUDITOR: ASSISTENTE DE LANÇAMENTO (ETAPAS) ==================== -->
 <div id="viewWizardAnimal" class="container hidden">
-  <div class="card">
+ <div class="wiz-layout">
+  <div class="card" style="margin-bottom:0;">
     <div class="wiz-progress" id="wizProgress"></div>
     <div id="wizPausadoBanner" class="hidden" style="background:#fff3cd;border:1px solid #ffc107;color:#856404;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;font-weight:600;"></div>
     <div id="wizStepContent"></div>
@@ -332,6 +346,18 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
       <button class="btn-primary" id="btnWizNext">Confirmar e avançar</button>
     </div>
   </div>
+  <div>
+    <div class="card" style="margin-bottom:14px;">
+      <h2 style="font-size:15px;">🕘 Últimos auditados</h2>
+      <p class="sub" style="margin-top:-4px;">Toque pra editar rápido.</p>
+      <div id="wizHistorico"></div>
+    </div>
+    <div class="card" style="margin-bottom:0;">
+      <h2 style="font-size:15px;">📊 Resumo deste controle</h2>
+      <div id="wizResumo"></div>
+    </div>
+  </div>
+ </div>
 </div>
 
 <!-- ==================== AUDITOR: CONFERÊNCIA (SOLTAR REBANHO) ==================== -->
@@ -385,6 +411,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
       <button class="btn-secondary sub-tab" id="atab-monitoramento">Monitoramento</button>
       <button class="btn-secondary sub-tab" id="atab-auditores">Auditores</button>
       <button class="btn-secondary sub-tab" id="atab-retiros">🏠 Retiros</button>
+      <button class="btn-secondary sub-tab" id="atab-ordens">🗂 Ordens</button>
     </div>
   </div>
 
@@ -497,6 +524,18 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     </div>
   </div>
 
+  <div id="adminOrdensView" class="hidden">
+    <div class="card">
+      <h2>Ordens (controles de serviço)</h2>
+      <p class="sub">Exclua ordens de teste: apaga o controle e <strong>todos os animais lançados nele</strong>, do banco de dados e de todos os aparelhos. Não dá pra desfazer.</p>
+      <div class="grid">
+        <div><label>Buscar Nº / auditor / retiro</label><input id="ordensBusca" placeholder="Ex: 001"></div>
+        <div><label>Data</label><input type="date" id="ordensData"></div>
+      </div>
+      <div id="ordensLista" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
   <div id="adminRetirosView" class="hidden">
     <div class="card">
       <h2>Retiros da Fazenda Jaó</h2>
@@ -540,7 +579,7 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
 <div id="viewCarimbos" class="container hidden">
   <div class="card">
     <h2>Animais por carimbo</h2>
-    <p class="sub">Quantos animais caíram em cada carimbo (@). Toque num lote pra lançar Origem e Destino — vale pra todos os animais daquele carimbo no filtro. Depois de lançado, só o administrador pode alterar.</p>
+    <p class="sub">Quantos animais caíram em cada carimbo (@). Toque num lote pra lançar o Destino — vale pros animais daquele carimbo (por raça) no filtro. A Origem vem do controle. Depois de lançado, só o administrador pode alterar.</p>
     <div class="grid">
       <div><label>Data</label><input type="date" id="carimboFiltroData"></div>
       <div><label>Nº da ordem (opcional)</label><input id="carimboFiltroNumero" placeholder="Todas" inputmode="numeric"></div>
@@ -626,7 +665,9 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
   <div class="card" style="max-width:420px;width:100%;">
     <h2 id="lcTitulo">Lote</h2>
     <p class="sub" id="lcSub">—</p>
-    <label>Origem</label><input id="lcOrigem" placeholder="Ex: Pasto 3" list="origensList">
+    <label>Raças deste lançamento</label>
+    <div id="lcRacas" class="chip-row" style="margin-top:4px;margin-bottom:4px;"></div>
+    <p class="sub" id="lcRacasInfo" style="margin-top:4px;">Marque as raças que vão pro mesmo destino. As desmarcadas você lança depois, com outro destino.</p>
     <label style="margin-top:10px;">Destino</label><select id="lcDestino"></select>
     <input id="lcDestinoOutro" class="hidden" placeholder="Qual destino?" style="margin-top:6px;">
     <div id="lcDetalheWrap" class="hidden" style="margin-top:10px;">
@@ -664,6 +705,23 @@ th{background:var(--cinza-claro);font-size:11px;text-transform:uppercase;color:v
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn-secondary" id="medCancel">Cancelar</button>
       <button class="btn-primary" id="medSave">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EDIÇÃO RÁPIDA (auditor) -->
+<div id="modalEdicaoRapida" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div class="card" style="max-width:420px;width:100%;">
+    <h2 id="erTitulo">Editar animal</h2>
+    <div class="grid">
+      <div><label>Raça</label><select id="erRaca"></select></div>
+      <div><label>Categoria</label><select id="erCategoria"></select></div>
+      <div><label>Carimbo (@)</label><input type="number" step="0.1" inputmode="decimal" id="erCarimbo"></div>
+      <div class="full"><label>Obs.</label><input id="erObs" placeholder="Opcional"></div>
+    </div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn-secondary" id="erCancel">Cancelar</button>
+      <button class="btn-primary" id="erSave">Salvar</button>
     </div>
   </div>
 </div>
@@ -822,11 +880,17 @@ window.addEventListener("online", processarFila);
 window.addEventListener("offline", atualizarStatusSync);
 
 /* ================= FILA OFFLINE ================= */
+let ultimaLeituraConfig = 0;
 async function processarFila(){
   if(!navigator.onLine || filaOffline.length===0){ atualizarStatusSync(); return; }
+  // de tempos em tempos confere se o admin excluiu alguma ordem (pra não reenviar dados dela)
+  if(currentUser && Date.now() - ultimaLeituraConfig > 120000){ ultimaLeituraConfig = Date.now(); try{ await carregarConfig(); }catch(e){} }
   const pendentes = [...filaOffline];
   for(const op of pendentes){
     try{
+      if((configCache.controlesExcluidos||[]).includes(op.id) || (op.dados && (configCache.controlesExcluidos||[]).includes(op.dados.controleId))){
+        filaOffline = filaOffline.filter(f=>f!==op); salvarFilaLocal(); continue;
+      }
       if(op.tipo==="novoServico" || op.tipo==="updServico"){
         await db.collection("controles").doc(op.id).set(op.dados, {merge:true});
       } else if(op.tipo==="novoAnimal" || op.tipo==="updAnimal"){
@@ -1113,7 +1177,7 @@ $("btnRegistrarLinha").onclick = ()=>{
     id: uid(), controleId: servicoAtual.id, controleNumero: servicoAtual.numero||servicoAtual.id, ord,
     data: servicoAtual.data, retiro: servicoAtual.retiro||"", tipoAuditoria: "confinamento",
     raca, linha, lote, quantidade,
-    categoria:"", origem:"", destino:"", carimbo:0, obs:"",
+    categoria:"", origem: servicoAtual.origem||"", destino:"", carimbo:0, obs:"",
     status:"pendente", loteId:null, conferente1:null, conferente2:null, confAt:null,
     criadoPor: currentUser.uid, criadoPorNome: currentAuditorNome || currentUser.email,
     criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoEmLocal: Date.now()
@@ -1280,8 +1344,38 @@ function preencherFormServico(s){
   $("fNumero").value=s.numero||""; $("fData").value=s.data||"";
   $("fFazenda").value=s.fazenda||FAZENDA_PADRAO; $("fRetiro").value=s.retiro||"";
   $("fVet").value=s.vetResponsavel||""; $("fResponsavel").value=s.responsavel||"";
+  $("fOrigem").value=s.origem||"";
 }
 ["fNumero","fData","fFazenda","fRetiro","fVet","fResponsavel"].forEach(c=> $(c).addEventListener("change", salvarCabecalho));
+/* Origem do manejo: registrada uma vez no controle e aplicada em TODOS os animais dele
+   (inclusive os que forem lançados depois). */
+$("fOrigem").addEventListener("change", ()=>{
+  if(!servicoAtual) return;
+  const origem = $("fOrigem").value.trim();
+  Object.assign(servicoAtual, { origem });
+  const idx = servicosCache.findIndex(x=>x.id===servicoAtual.id);
+  if(idx>=0) servicosCache[idx].origem = origem;
+  salvarCacheServicos();
+  filaOffline.push({tipo:"updServico", id:servicoAtual.id, dados:{ origem }});
+  let n = 0;
+  animaisAtual.forEach(a=>{
+    if(a.origem === origem) return;
+    a.origem = origem; n++;
+    filaOffline.push({tipo:"updAnimal", id:a.id, dados:{ origem }});
+  });
+  localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+  salvarFilaLocal(); processarFila();
+  renderTabela();
+  if(n) toastRapido(`📍 Origem "${origem||"—"}" aplicada em ${n} animal(is) deste controle.`);
+});
+function toastRapido(msg){
+  let el = document.getElementById("toastRapido");
+  if(!el){ el = document.createElement("div"); el.id = "toastRapido";
+    el.style.cssText = "position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#183819;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;z-index:99;max-width:90%;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.25);";
+    document.body.appendChild(el); }
+  el.textContent = msg; el.style.display = "block";
+  clearTimeout(el._t); el._t = setTimeout(()=> el.style.display="none", 2600);
+}
 function salvarCabecalho(){
   if(!servicoAtual) return;
   const dados = {
@@ -1306,10 +1400,36 @@ function horaAgoraHHMM(){
 /* Atualiza o card "Operação de hoje" — existe em duas telas (viewServico e
    viewConfinamento, com ids "...Conf" na segunda), então atualiza as duas de uma vez;
    pula silenciosamente o conjunto de ids que não existir na página. */
+/* ---- Pausas: quantas precisar no dia. Cada uma guarda {inicio, fim, motivo}. ---- */
+function listaPausas(s){
+  if(!s) return [];
+  if(Array.isArray(s.pausas)) return s.pausas;
+  if(s.intervalo) return [{ inicio:s.intervalo, fim:s.retorno||"", motivo:s.motivoPausa||"" }]; // registros antigos
+  return [];
+}
+function pausaAberta(s){ const p = listaPausas(s); const u = p[p.length-1]; return (u && !u.fim) ? u : null; }
+function textoPausas(s, sep){
+  return listaPausas(s).map((p,i)=>`${i+1}ª: ${p.inicio}–${p.fim||"em pausa"}${p.motivo?` (${p.motivo})`:""}`).join(sep||" · ");
+}
+/* minutos efetivamente trabalhados: do início até o término (ou até agora, se em andamento),
+   descontando todas as pausas */
+function minutosTrabalhados(s, ateAgora){
+  const ini = horaParaMin(s.horaInicio);
+  let fim = horaParaMin(s.horaTermino);
+  if(fim==null && ateAgora) fim = horaParaMin(horaAgoraHHMM());
+  if(ini==null || fim==null || fim<=ini) return 0;
+  let min = fim - ini;
+  listaPausas(s).forEach(p=>{
+    const a = horaParaMin(p.inicio); let b = horaParaMin(p.fim);
+    if(b==null) b = fim;
+    if(a!=null && b!=null && b>a) min -= (Math.min(b,fim) - Math.max(a,ini));
+  });
+  return Math.max(0, min);
+}
 function renderOperacaoCard(){
   if(!servicoAtual) return;
   const s = servicoAtual;
-  const pausada = s.intervalo && !s.retorno && !s.horaTermino;
+  const pausada = !!pausaAberta(s) && !s.horaTermino;
   const finalizada = !!s.horaTermino;
   let status = "🟢 Em andamento";
   if(finalizada) status = "🔒 Finalizada";
@@ -1322,10 +1442,11 @@ function renderOperacaoCard(){
     const elInicio = $(ids.inicio);
     if(!elInicio) return; // esse conjunto de ids não existe nessa página — pula
     elInicio.textContent = s.horaInicio || "—";
-    $(ids.introw).classList.toggle("hidden", !s.intervalo);
-    $(ids.intlbl).textContent = s.intervalo || "—";
-    $(ids.retrow).classList.toggle("hidden", !s.retorno);
-    $(ids.retlbl).textContent = s.retorno || "—";
+    const pausas = listaPausas(s);
+    $(ids.introw).classList.toggle("hidden", !pausas.length);
+    $(ids.intlbl).innerHTML = pausas.map((p,i)=>
+      `<div class="stat-mini"><span>⏸ Pausa ${i+1}${p.motivo?` — ${p.motivo}`:""}</span><span>${p.inicio} → ${p.fim || "<strong>em pausa</strong>"}</span></div>`).join("");
+    $(ids.retrow).classList.add("hidden");
     $(ids.termrow).classList.toggle("hidden", !s.horaTermino);
     $(ids.termlbl).textContent = s.horaTermino || "—";
     $(ids.statuslbl).textContent = status;
@@ -1355,6 +1476,17 @@ function registrarHoraOperacao(campo, extra){
 /* Finalizar operação = fim do manejo: pede Origem, Destino e Pasto e aplica em todos os
    animais deste controle que ainda não têm esses dados (no lançamento eles não são mais
    pedidos animal por animal). Depois registra a hora final. */
+function salvarPausas(pausas){
+  const dados = { pausas };
+  Object.assign(servicoAtual, dados);
+  const idx = servicosCache.findIndex(x=>x.id===servicoAtual.id);
+  if(idx>=0) Object.assign(servicosCache[idx], dados);
+  salvarCacheServicos();
+  filaOffline.push({tipo:"updServico", id:servicoAtual.id, dados});
+  salvarFilaLocal(); processarFila();
+  renderOperacaoCard();
+  if(!$("viewServico").classList.contains("hidden")) calcularResumo();
+}
 function finalizarOperacao(){
   if(!servicoAtual) return;
   $("fmPasto").value = servicoAtual.pasto || "";
@@ -1390,7 +1522,7 @@ $("btnFinalizarOperacaoConf").onclick = finalizarOperacao;
    curto); retomar não pede nada — só a hora mesmo. Botão existe em duas telas (dentro do
    assistente e na tela de Confinamento) — atualiza as duas juntas. */
 function operacaoEstaPausada(){
-  return !!(servicoAtual && servicoAtual.intervalo && !servicoAtual.retorno);
+  return !!(servicoAtual && pausaAberta(servicoAtual) && !servicoAtual.horaTermino);
 }
 function atualizarBotaoPausar(){
   const pausada = operacaoEstaPausada();
@@ -1405,8 +1537,9 @@ function atualizarBotaoPausar(){
     if(ids.banner){
       const banner = $(ids.banner);
       if(pausada){
-        const motivo = servicoAtual.motivoPausa ? ` — ${servicoAtual.motivoPausa}` : "";
-        banner.textContent = `⏸ Operação pausada às ${servicoAtual.intervalo}${motivo} — toque em "Retomar operação" pra continuar.`;
+        const pa = pausaAberta(servicoAtual) || {};
+        const motivo = pa.motivo ? ` — ${pa.motivo}` : "";
+        banner.textContent = `⏸ Operação pausada às ${pa.inicio||"--:--"}${motivo} — toque em "Retomar operação" pra continuar.`;
         banner.classList.remove("hidden");
       } else {
         banner.classList.add("hidden");
@@ -1416,7 +1549,10 @@ function atualizarBotaoPausar(){
 }
 function acaoPausarOuRetomar(){
   if(operacaoEstaPausada()){
-    const hora = registrarHoraOperacao("retorno");
+    const hora = horaAgoraHHMM();
+    const pausas = listaPausas(servicoAtual).map(p=>({...p}));
+    if(pausas.length && !pausas[pausas.length-1].fim) pausas[pausas.length-1].fim = hora;
+    salvarPausas(pausas);
     alert(`▶ Operação retomada às ${hora}.`);
   } else {
     $("inMotivoPausa").value = "";
@@ -1431,7 +1567,10 @@ $("motivoPausaConfirm").onclick = ()=>{
   const motivo = $("inMotivoPausa").value.trim();
   if(!motivo){ alert("Descreve rapidinho o motivo da pausa."); return; }
   $("modalMotivoPausa").classList.add("hidden");
-  const hora = registrarHoraOperacao("intervalo", { motivoPausa: motivo });
+  const hora = horaAgoraHHMM();
+  const pausas = listaPausas(servicoAtual).map(p=>({...p}));
+  pausas.push({ inicio:hora, fim:"", motivo });
+  salvarPausas(pausas);
   alert(`⏸ Operação pausada às ${hora} — ${motivo}.`);
 };
 
@@ -1528,17 +1667,30 @@ function renderCarimbos(){
     const vals = [...new Set(anims.filter(a=>a.origemDestinoTravado).map(a=>a[campo]||"—"))];
     return vals.length ? vals.join(", ") : "";
   };
+  // agrupa os já lançados por (origem + destino) e diz quais raças foram em cada um
+  const lancamentosPorRaca = (anims)=>{
+    const m = {};
+    anims.filter(a=>a.origemDestinoTravado).forEach(a=>{
+      const k = destinoComDetalhe(a)||"—";
+      if(!m[k]) m[k] = { origem:a.origem||"—", destino:destinoComDetalhe(a)||"—", racas:{} };
+      const r = a.raca||"Sem raça"; m[k].racas[r] = (m[k].racas[r]||0)+1;
+    });
+    return Object.values(m);
+  };
   $("tabelaCarimbos").innerHTML = linhas.map((g,i)=>{
-    const pend = g.animais.filter(a=>!a.origemDestinoTravado).length;
+    const pendAnim = g.animais.filter(a=>!a.origemDestinoTravado);
+    const pend = pendAnim.length;
     const travado = pend===0;
-    const origem = resumoCampo(g.animais,"origem");
-    const destVals = [...new Set(g.animais.filter(a=>a.origemDestinoTravado).map(a=>destinoComDetalhe(a)||"—"))];
-    const destino = destVals.join(", ");
-    const extra = (!travado && pend<g.n) ? `<div class="meta">${pend} sem origem/destino</div>` : "";
+    const grupos = lancamentosPorRaca(g.animais);
+    const varios = grupos.length > 1;
+    const rotRacas = gr => Object.entries(gr.racas).map(([r,n])=>`${r} ${n}`).join(", ");
+    const origem = [...new Set(g.animais.map(a=>a.origem).filter(Boolean))].join(", ");
+    const destino = grupos.map(gr=> varios ? `<div>${gr.destino} <span class="meta">(${rotRacas(gr)})</span></div>` : gr.destino).join("");
+    const extra = (!travado && pend<g.n) ? `<div class="meta" style="color:var(--verde);font-weight:600;">➕ faltam ${pend}: ${resumoRacas(pendAnim)} — toque pra lançar</div>` : "";
     return `<tr data-grupo="${i}" style="cursor:${travado?"default":"pointer"};">
       <td><strong>${fmt(g.valor)} @</strong></td><td>${g.retiro}</td><td>${g.n} ${g.n===1?"animal":"animais"}<div class="meta">${resumoRacas(g.animais)}</div></td><td>${fmt(g.valor*g.n)}</td>
-      <td>${travado?"🔒 ":""}${origem || (travado?"—":"<span style='color:var(--cinza);'>toque pra lançar</span>")}${extra}</td>
-      <td>${travado?"🔒 ":""}${destino || (travado?"—":"")}</td></tr>`;
+      <td>${origem || "<span style='color:var(--cinza);'>—</span>"}</td>
+      <td>${travado?"🔒 ":""}${destino || (travado?"—":"<span style='color:var(--cinza);'>toque pra lançar</span>")}${extra}</td></tr>`;
   }).join("");
   document.querySelectorAll("#tabelaCarimbos tr[data-grupo]").forEach(tr=>{
     tr.onclick = ()=> abrirLoteCarimbo(gruposCarimboAtuais[Number(tr.dataset.grupo)]);
@@ -1561,21 +1713,44 @@ function abrirLoteCarimbo(g){
   const pendentes = g.animais.filter(a=>!a.origemDestinoTravado);
   const fmt = v=> v.toLocaleString("pt-BR",{maximumFractionDigits:1});
   if(!pendentes.length){
-    alert(`🔒 O lote de ${fmt(g.valor)} @ (${g.retiro}) já tem Origem e Destino lançados.\nPra alterar, fale com o administrador.`);
+    alert(`🔒 O lote de ${fmt(g.valor)} @ (${g.retiro}) já tem o Destino lançado.\nPra alterar, fale com o administrador.`);
     return;
   }
-  loteCarimboAtual = { valor:g.valor, animais:pendentes };
+  loteCarimboAtual = { valor:g.valor, retiro:g.retiro, grupo:g, selecionadas:new Set(contagemPorRaca(pendentes).map(([r])=>r)) };
   $("lcTitulo").textContent = `Lote ${fmt(g.valor)} @ · ${g.retiro}`;
+  prepararFormLote();
+  $("modalLoteCarimbo").classList.remove("hidden");
+  setTimeout(()=>{ const el=$("lcDestino"); if(el) el.focus(); }, 30);
+}
+function pendentesDoLote(){
+  return loteCarimboAtual ? loteCarimboAtual.grupo.animais.filter(a=>!a.origemDestinoTravado) : [];
+}
+function animaisSelecionadosLote(){
+  const sel = loteCarimboAtual.selecionadas;
+  return pendentesDoLote().filter(a=> sel.has(a.raca||"Sem raça"));
+}
+function renderRacasLote(){
+  const pend = pendentesDoLote();
+  const racas = contagemPorRaca(pend);
+  const sel = loteCarimboAtual.selecionadas;
+  $("lcRacas").innerHTML = racas.map(([r,n])=>`<button type="button" class="chip${sel.has(r)?" on":""}" data-r="${r}">${sel.has(r)?"✓ ":""}${r} <span style="opacity:.8;font-weight:500;">(${n})</span></button>`).join("");
+  $("lcRacas").querySelectorAll("[data-r]").forEach(b=>{
+    b.onclick = ()=>{ const r=b.dataset.r; sel.has(r) ? sel.delete(r) : sel.add(r); renderRacasLote(); };
+  });
+  $("lcRacasInfo").classList.toggle("hidden", racas.length < 2);
+  const nSel = animaisSelecionadosLote().length;
   const fData = $("carimboFiltroData").value;
-  $("lcSub").textContent = `${pendentes.length} ${pendentes.length===1?"animal":"animais"} sem origem/destino${fData?` · ${formatarDataBR(fData)}`:" · todas as datas"}`;
-  $("lcOrigem").value = "";
+  $("lcSub").textContent = `${pend.length} ${pend.length===1?"animal":"animais"} sem destino${fData?` · ${formatarDataBR(fData)}`:" · todas as datas"}`;
+  $("lcConfirm").textContent = nSel===pend.length ? `Aplicar ao lote (${nSel})` : `Aplicar às raças marcadas (${nSel})`;
+  $("lcConfirm").disabled = nSel===0;
+}
+function prepararFormLote(){
   $("lcDestino").innerHTML = `<option value="">Selecione...</option>` + DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
   $("lcDestino").value = ""; $("lcDestinoOutro").value = ""; $("lcDestinoOutro").classList.add("hidden");
   $("lcDetalhe").value = ""; $("lcDetalheWrap").classList.add("hidden");
   const origensConhecidas = [...new Set(carimbosAnimaisCache.map(a=>a.origem).filter(Boolean))];
   $("origensList").innerHTML = origensConhecidas.map(o=>`<option value="${o}">`).join("");
-  $("modalLoteCarimbo").classList.remove("hidden");
-  setTimeout(()=>{ const el=$("lcOrigem"); if(el) el.focus(); }, 30);
+  renderRacasLote();
 }
 $("lcDestino").addEventListener("change", ()=>{
   const v = $("lcDestino").value;
@@ -1595,17 +1770,18 @@ $("lcDestino").addEventListener("change", ()=>{
 $("lcCancel").onclick = ()=>{ $("modalLoteCarimbo").classList.add("hidden"); loteCarimboAtual = null; };
 $("lcConfirm").onclick = ()=>{
   if(!loteCarimboAtual) return;
-  const origem = $("lcOrigem").value.trim();
   const destino = $("lcDestino").value === "Outro" ? $("lcDestinoOutro").value.trim() : $("lcDestino").value;
-  if(!origem){ alert("Informe a origem."); return; }
   if(!destino){ alert("Selecione o destino."); return; }
   const destinoDetalhe = $("lcDetalhe").value.trim();
   if(!destinoDetalhe){ alert(infoDetalheDestino($("lcDestino").value).lbl.replace("?","") + " — preencha pra continuar."); $("lcDetalhe").focus(); return; }
-  const n = loteCarimboAtual.animais.length;
-  if(!confirm(`Aplicar Origem "${origem}" e Destino "${destino} — ${destinoDetalhe}" em ${n} ${n===1?"animal":"animais"} de ${loteCarimboAtual.valor} @?\n\nDepois disso só o administrador consegue alterar.`)) return;
-  const dados = { origem, destino, destinoDetalhe, origemDestinoTravado:true, origemDestinoEm: Date.now() };
+  const alvo = animaisSelecionadosLote();
+  const n = alvo.length;
+  if(!n){ alert("Marque pelo menos uma raça."); return; }
+  const racasTxt = resumoRacas(alvo);
+  if(!confirm(`Aplicar o Destino "${destino} — ${destinoDetalhe}" em ${n} ${n===1?"animal":"animais"} de ${loteCarimboAtual.valor} @ (${racasTxt})?\n\nDepois disso só o administrador consegue alterar.`)) return;
+  const dados = { destino, destinoDetalhe, origemDestinoTravado:true, origemDestinoEm: Date.now() };
   const porControle = {};
-  loteCarimboAtual.animais.forEach(a=>{
+  alvo.forEach(a=>{
     Object.assign(a, dados);
     filaOffline.push({tipo:"updAnimal", id:a.id, dados:{...dados}});
     if(a.controleId){ (porControle[a.controleId] = porControle[a.controleId] || []).push(a.id); }
@@ -1622,10 +1798,19 @@ $("lcConfirm").onclick = ()=>{
     }
   });
   salvarFilaLocal(); processarFila();
+  renderCarimbos();
+  const restantes = pendentesDoLote();
+  if(restantes.length){
+    // ainda tem raça sem destino nesse lote: já deixa pronto pra lançar a próxima
+    alert(`✅ Aplicado em ${n} ${n===1?"animal":"animais"} (${racasTxt}).\nFaltam ${restantes.length}: ${resumoRacas(restantes)} — lance o destino deles agora.`);
+    loteCarimboAtual.selecionadas = new Set(contagemPorRaca(restantes).map(([r])=>r));
+    prepararFormLote();
+    setTimeout(()=>{ const el=$("lcDestino"); if(el) el.focus(); }, 30);
+    return;
+  }
   $("modalLoteCarimbo").classList.add("hidden");
   loteCarimboAtual = null;
-  renderCarimbos();
-  alert(`✅ Origem e destino aplicados em ${n} ${n===1?"animal":"animais"}.`);
+  alert(`✅ Destino aplicado em ${n} ${n===1?"animal":"animais"}. Lote completo.`);
 };
 $("carimboFiltroData").addEventListener("change", carregarCarimbos);
 $("carimboFiltroNumero").addEventListener("input", renderCarimbos);
@@ -1656,6 +1841,15 @@ async function carregarConfig(){
       if(Array.isArray(d.destinos) && d.destinos.length) configCache.destinos = d.destinos;
       if(d.proximoNumeroControle) configCache.proximoNumeroControle = d.proximoNumeroControle;
       if(Array.isArray(d.retiros)) configCache.retiros = d.retiros;
+      configCache.controlesExcluidos = Array.isArray(d.controlesExcluidos) ? d.controlesExcluidos : [];
+      if(Array.isArray(d.controlesExcluidos) && d.controlesExcluidos.length){
+        const exc = new Set(d.controlesExcluidos);
+        try{
+          filaOffline = JSON.parse(localStorage.getItem(FILA_KEY) || "[]");
+          servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]");
+        }catch(e){}
+        d.controlesExcluidos.forEach(id=>{ if(localStorage.getItem("animais_"+id)!==null || servicosCache.some(s=>s.id===id) || filaOffline.some(op=>op.id===id || (op.dados&&op.dados.controleId===id))) descartarControleLocal(id); });
+      }
       if(d.resetEm && String(d.resetEm) !== (localStorage.getItem("cs_reset_visto")||"")){
         // sistema foi zerado pelo admin: descarta o que este aparelho tinha guardado
         // (inclusive a fila offline, pra não reenviar dados antigos)
@@ -1823,7 +2017,85 @@ function renderWiz(){
   $("btnWizBack").textContent = wizIdx>0 ? "Voltar" : (animaisAtual.length>0 ? "✕ Fechar" : "Cancelar");
   $("btnWizNext").textContent = step.key==="revisar" ? "✅ Confirmar lançamento" : "Confirmar e avançar";
   atualizarBotaoPausar();
+  renderPainelLateralWiz();
 }
+/* ---- Painel ao lado do assistente: últimos 4 auditados + resumo do controle ---- */
+function animalEditavel(a){
+  // dá pra editar enquanto está pendente e ainda não teve origem/destino lançado nos Carimbos
+  return a && a.tipoAuditoria!=="confinamento" && a.status==="pendente" && !a.origemDestinoTravado;
+}
+function renderPainelLateralWiz(){
+  const wrap = $("wizHistorico"); if(!wrap) return;
+  const ultimos = animaisAtual.filter(a=>a.tipoAuditoria!=="confinamento").slice().sort((a,b)=>(Number(b.ord)||0)-(Number(a.ord)||0)).slice(0,4);
+  wrap.innerHTML = ultimos.length ? "" : `<p class="pending">Nenhum animal lançado ainda.</p>`;
+  ultimos.forEach(a=>{
+    const ed = animalEditavel(a);
+    const div = document.createElement("div");
+    div.className = "hist-item" + (ed ? "" : " lock");
+    div.innerHTML = `<div class="t">Ord. ${a.ord} · ${a.carimbo} @ ${ed?"<span style='float:right;color:var(--verde);'>✎</span>":"<span style='float:right;'>🔒</span>"}</div>
+      <div class="m">${a.raca||"-"} · ${a.categoria||"-"}${a.obs?` · ${a.obs}`:""}</div>`;
+    div.onclick = ()=> abrirEdicaoRapida(a.id);
+    wrap.appendChild(div);
+  });
+  // resumo: por carimbo e por raça
+  const lista = animaisAtual.filter(a=>a.tipoAuditoria!=="confinamento");
+  const porCarimbo = {};
+  lista.forEach(a=>{ const v = Math.round((parseFloat(a.carimbo)||0)*10)/10; porCarimbo[v] = (porCarimbo[v]||0)+1; });
+  const fmt = v=> Number(v).toLocaleString("pt-BR",{maximumFractionDigits:1});
+  const linhasCar = Object.keys(porCarimbo).map(Number).sort((a,b)=>a-b).map(v=>`<div class="res-row"><span>Carimbo ${fmt(v)} @</span><strong>${porCarimbo[v]}</strong></div>`).join("");
+  const linhasRaca = contagemPorRaca(lista).map(([r,n])=>`<div class="res-row"><span>${r}</span><strong>${n}</strong></div>`).join("");
+  $("wizResumo").innerHTML = lista.length ? `
+    <div class="res-row" style="font-size:14px;"><span>Total de animais</span><strong>${lista.length}</strong></div>
+    <div class="chip-lbl" style="font-size:12px;font-weight:700;color:var(--verde);margin:10px 0 2px;">Por carimbo</div>${linhasCar}
+    <div class="chip-lbl" style="font-size:12px;font-weight:700;color:var(--verde);margin:10px 0 2px;">Por raça</div>${linhasRaca}`
+    : `<p class="pending">Sem lançamentos ainda.</p>`;
+}
+let animalEdicaoRapida = null;
+function abrirEdicaoRapida(id){
+  const a = animaisAtual.find(x=>x.id===id);
+  if(!a) return;
+  if(!animalEditavel(a)){
+    alert(a.origemDestinoTravado ? "🔒 Esse animal já teve origem/destino lançados — só o administrador pode alterar."
+      : a.status!=="pendente" ? "🔒 Esse animal já foi conferido/solto — só o administrador pode alterar."
+      : "Esse lançamento não pode ser editado por aqui.");
+    return;
+  }
+  animalEdicaoRapida = a;
+  $("erTitulo").textContent = `Editar Ord. ${a.ord}`;
+  const racas = RACAS_OPCOES.includes(a.raca) ? RACAS_OPCOES : [...RACAS_OPCOES, a.raca].filter(Boolean);
+  $("erRaca").innerHTML = racas.map(r=>`<option value="${r}">${r}</option>`).join("");
+  $("erRaca").value = a.raca||"";
+  const cats = CATEGORIAS_OPCOES.includes(a.categoria) ? CATEGORIAS_OPCOES : [...CATEGORIAS_OPCOES, a.categoria].filter(Boolean);
+  $("erCategoria").innerHTML = cats.map(c=>`<option value="${c}">${c}</option>`).join("");
+  $("erCategoria").value = a.categoria||"";
+  $("erCarimbo").value = a.carimbo;
+  $("erObs").value = a.obs||"";
+  $("modalEdicaoRapida").classList.remove("hidden");
+  setTimeout(()=>{ const el=$("erCarimbo"); el.focus(); el.select(); }, 30);
+}
+function fecharEdicaoRapida(){ $("modalEdicaoRapida").classList.add("hidden"); animalEdicaoRapida = null; }
+$("erCancel").onclick = fecharEdicaoRapida;
+$("erSave").onclick = ()=>{
+  const a = animalEdicaoRapida; if(!a) return;
+  const carimbo = parseFloat(String($("erCarimbo").value).replace(",", "."));
+  if(!carimbo || carimbo<=0){ alert("Informe um carimbo (@) válido."); return; }
+  const dados = { raca:$("erRaca").value, categoria:$("erCategoria").value, carimbo, obs:$("erObs").value.trim() };
+  Object.assign(a, dados);
+  localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+  filaOffline.push({tipo:"updAnimal", id:a.id, dados});
+  const totais = { totalAnimais: somaAnimaisControle(), totalArrobas: somaArrobas() };
+  Object.assign(servicoAtual, totais);
+  const idxS = servicosCache.findIndex(s=>s.id===servicoAtual.id);
+  if(idxS>=0) Object.assign(servicosCache[idxS], totais);
+  salvarCacheServicos();
+  filaOffline.push({tipo:"updServico", id:servicoAtual.id, dados:totais});
+  salvarFilaLocal(); processarFila();
+  fecharEdicaoRapida();
+  renderPainelLateralWiz();
+  if(!$("viewServico").classList.contains("hidden")) renderTabela();
+};
+$("erObs").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); $("erSave").click(); } });
+$("erCarimbo").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); $("erSave").click(); } });
 function renderWizStep(key){
   const ordAtual = proximaOrdemDoDia;
   const errHtml = wizErr ? `<div class="err-banner">${wizErr}</div>` : "";
@@ -1953,6 +2225,10 @@ function bindWizStep(key){
    não precisa de campo extra), Enter confirma a etapa atual — igual ao Audita Certo ---- */
 document.addEventListener("keydown", (e)=>{
   if(document.getElementById("viewWizardAnimal").classList.contains("hidden")) return;
+  if(!document.getElementById("modalEdicaoRapida").classList.contains("hidden")){
+    if(e.key==="Escape") fecharEdicaoRapida();
+    return; // edição rápida aberta: Enter/números não mexem no assistente
+  }
   if(e.key === "Enter"){
     if(e.target && e.target.tagName === "TEXTAREA") return;
     const btn = $("btnWizNext");
@@ -1990,7 +2266,7 @@ function confirmarESalvarAnimal(){
   const animal = {
     id: uid(), controleId: servicoAtual.id, controleNumero: servicoAtual.numero||servicoAtual.id, ord,
     data: servicoAtual.data, retiro: servicoAtual.retiro||"", tipoAuditoria: tipoAuditoriaAtual, raca: wizData.raca, categoria: wizData.categoria,
-    origem: "", destino: "", pasto: "", carimbo, // origem/destino/pasto vêm no fim do manejo
+    origem: servicoAtual.origem||"", destino: "", pasto: "", carimbo, // origem vem do controle; destino na aba Carimbos
     obs: (wizData.obs||"").trim(), status:"pendente", loteId:null, conferente1:null, conferente2:null, confAt:null,
     criadoPor: currentUser.uid, criadoPorNome: currentAuditorNome || currentUser.email,
     criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoEmLocal: Date.now()
@@ -2053,9 +2329,14 @@ function renderTabela(){
       <td>${a.destino?`<span class="badge ${cls}">${destinoComDetalhe(a)}</span>`:"-"}</td><td>${a.pasto||"-"}</td><td>${a.carimbo}</td>
       <td><span class="badge ${a.status}">${a.status==="pendente"?"Pendente":"Solto"}</span></td>
       <td>${a.obs||""}</td>
-      <td class="row-actions">${a.status==="pendente"?`<button class="btn-danger" data-id="${a.id}">✕</button>`:""}</td>`;
+      <td class="row-actions">${animalEditavel(a)?`<span style="color:var(--verde);margin-right:8px;">✎</span>`:(a.origemDestinoTravado||a.status!=="pendente")?"🔒":""}${a.status==="pendente"&&!a.origemDestinoTravado?`<button class="btn-danger" data-id="${a.id}">✕</button>`:""}</td>`;
     const btn = tr.querySelector("button");
-    if(btn) btn.onclick = ()=> excluirAnimal(a.id);
+    if(btn) btn.onclick = (ev)=>{ ev.stopPropagation(); excluirAnimal(a.id); };
+    if(animalEditavel(a)){
+      tr.classList.add("editavel");
+      tr.title = "Toque pra editar";
+      tr.onclick = ()=> abrirEdicaoRapida(a.id);
+    }
     tbody.appendChild(tr);
   });
   $("proxOrd").textContent = proximaOrdemDoDia;
@@ -2073,11 +2354,7 @@ function calcularResumo(){
   $("cConf").textContent=conf; $("cRecria").textContent=recria; $("cRefugo").textContent=refugo; $("cOutro").textContent=outro;
   $("cPendentes").textContent=pend;
   const s = servicoAtual || {};
-  const ini=horaParaMin(s.horaInicio), interv=horaParaMin(s.intervalo);
-  const ret=horaParaMin(s.retorno), fim=horaParaMin(s.horaTermino);
-  let minutos=0;
-  if(ini!=null && interv!=null && interv>ini) minutos+=(interv-ini);
-  if(ret!=null && fim!=null && fim>ret) minutos+=(fim-ret);
+  const minutos = minutosTrabalhados(s, true);
   $("cAnimaisHora").textContent = minutos>0 ? Math.round(total/(minutos/60)) : 0;
 }
 
@@ -2098,8 +2375,9 @@ $("btnExportExcel").onclick = ()=>{
     ["CONTROLE DE SERVIÇO Nº", s.numero||""], ["Data", s.data||""],
     ["Fazenda", s.fazenda||""], ["Retiro", s.retiro||""],
     ["Vet. Responsável", s.vetResponsavel||""], ["Qnt. Pas. / Responsável", s.responsavel||""],
-    ["Hora Início", s.horaInicio||""], ["Intervalo", s.intervalo||""],
-    ["Retorno", s.retorno||""], ["Hora Término", s.horaTermino||""],
+    ["Origem", s.origem||""],
+    ["Hora Início", s.horaInicio||""], ["Pausas", textoPausas(s)],
+    ["Hora Término", s.horaTermino||""],
     ["Total Animais", $("cTotal").textContent], ["Total @ (Carimbo)", $("cArrobas").textContent],
     ["Animais/Hora", $("cAnimaisHora").textContent], ["Confinamento", $("cConf").textContent],
     ["Recria", $("cRecria").textContent], ["Refugo", $("cRefugo").textContent], ["Outros", $("cOutro").textContent],
@@ -2123,8 +2401,9 @@ $("btnExportPDF").onclick = async ()=>{
       ["Tipo de auditoria", (ROTULO_TIPO_AUDITORIA[s.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,"")],
       ["Vet. Responsável", s.vetResponsavel||"—"], ["Qnt. Pas. / Responsável", s.responsavel||"—"],
       ["Auditor", s.criadoPorNome||currentAuditorNome||"—"],
-      ["Hora início", s.horaInicio||"—"], ["Pausa", s.intervalo ? `${s.intervalo}${s.motivoPausa?` (${s.motivoPausa})`:""}` : "—"],
-      ["Retorno", s.retorno||"—"], ["Hora término", s.horaTermino||"—"],
+      ["Origem", s.origem||"—"],
+      ["Hora início", s.horaInicio||"—"], ["Pausas", textoPausas(s, "\n")||"—"],
+      ["Hora término", s.horaTermino||"—"],
       ["Pasto", s.pasto||"—"],
       ["Total de animais", String(totalAnimais)], ["Total @ (carimbo)", somaArrobas().toFixed(1)],
       ["Animais/hora", $("cAnimaisHora").textContent],
@@ -2336,7 +2615,7 @@ $("medSave").onclick = async ()=>{
 };
 
 /* ================= ADMIN ================= */
-const ADMIN_ABAS = { visao:"adminVisaoView", monitoramento:"adminMonitoramentoView", auditores:"adminAuditoresView", retiros:"adminRetirosView" };
+const ADMIN_ABAS = { visao:"adminVisaoView", monitoramento:"adminMonitoramentoView", auditores:"adminAuditoresView", retiros:"adminRetirosView", ordens:"adminOrdensView" };
 function abrirAbaAdmin(aba){
   Object.entries(ADMIN_ABAS).forEach(([k,view])=>{
     $("atab-"+k).classList.toggle("active", k===aba);
@@ -2345,6 +2624,77 @@ function abrirAbaAdmin(aba){
   if(aba==="monitoramento") renderMonitoramento();
   if(aba==="auditores") renderAuditoresList();
   if(aba==="retiros") abrirRetiros();
+  if(aba==="ordens") renderOrdensAdmin();
+}
+function renderOrdensAdmin(){
+  const wrap = $("ordensLista"); if(!wrap) return;
+  const q = ($("ordensBusca").value||"").trim().toLowerCase();
+  const fData = $("ordensData").value;
+  const qtdPorControle = {};
+  adminAnimaisCache.forEach(a=>{ qtdPorControle[a.controleId] = (qtdPorControle[a.controleId]||0) + qtdAnimal(a); });
+  let lista = adminControlesCache.slice();
+  // controles "fantasma" (animais cujo controle já não existe) também aparecem, pra poder limpar
+  const idsCtrl = new Set(lista.map(c=>c.id));
+  [...new Set(adminAnimaisCache.map(a=>a.controleId).filter(id=>id && !idsCtrl.has(id)))].forEach(id=>{
+    const a = adminAnimaisCache.find(x=>x.controleId===id);
+    lista.push({ id, numero:a.controleNumero||"?", data:a.data, retiro:a.retiro||"", criadoPorNome:a.criadoPorNome, _orfao:true });
+  });
+  if(fData) lista = lista.filter(c=> c.data===fData);
+  if(q) lista = lista.filter(c=> [c.numero, c.criadoPorNome, c.retiro].join(" ").toLowerCase().includes(q));
+  lista.sort((a,b)=> (b.data||"").localeCompare(a.data||"") || (b.criadoEmLocal||0)-(a.criadoEmLocal||0));
+  wrap.innerHTML = lista.length ? "" : `<p class="pending">Nenhuma ordem encontrada.</p>`;
+  lista.forEach(c=>{
+    const div = document.createElement("div"); div.className = "list-item";
+    const tipo = (ROTULO_TIPO_AUDITORIA[c.tipoAuditoria||"curral"]||"");
+    div.innerHTML = `<div>
+        <div style="font-weight:600;">Nº ${c.numero||"-"} — ${formatarDataBR(c.data)} <span style="font-weight:400;font-size:12px;color:var(--cinza);">· ${tipo}${c._orfao?" · ⚠ sem controle":""}</span></div>
+        <div class="meta">🏠 ${c.retiro||"Sem retiro"} · 👤 ${c.criadoPorNome||"-"} · ${qtdPorControle[c.id]||0} animais${c.horaTermino?" · finalizada":""}</div>
+      </div><button class="btn-danger" style="white-space:nowrap;">🗑 Excluir</button>`;
+    div.querySelector("button").onclick = ()=> excluirOrdemAdmin(c, qtdPorControle[c.id]||0);
+    wrap.appendChild(div);
+  });
+}
+$("ordensBusca").addEventListener("input", renderOrdensAdmin);
+$("ordensData").addEventListener("change", renderOrdensAdmin);
+async function excluirOrdemAdmin(c, qtd){
+  if(!isAdmin) return;
+  if(!navigator.onLine){ alert("Precisa estar online pra excluir."); return; }
+  if(!confirm(`Excluir a ordem Nº ${c.numero||"-"} (${formatarDataBR(c.data)} · ${c.retiro||"sem retiro"} · ${c.criadoPorNome||"-"})?\n\nVai apagar o controle e os ${qtd} animal(is) lançados nele. Não dá pra desfazer.`)) return;
+  try{
+    setLoadingOrdens(true);
+    // apaga os animais em lotes
+    while(true){
+      const snap = await db.collection("animais").where("controleId","==",c.id).limit(400).get();
+      if(snap.empty) break;
+      const batch = db.batch();
+      snap.docs.forEach(d=> batch.delete(d.ref));
+      await batch.commit();
+    }
+    await db.collection("controles").doc(c.id).delete();
+    // avisa os outros aparelhos pra descartarem o que tiverem guardado dessa ordem
+    await db.collection("config").doc("geral").set({ controlesExcluidos: firebase.firestore.FieldValue.arrayUnion(c.id) }, {merge:true});
+    descartarControleLocal(c.id);
+    adminAnimaisCache = adminAnimaisCache.filter(a=> a.controleId !== c.id);
+    adminControlesCache = adminControlesCache.filter(x=> x.id !== c.id);
+    aplicarFiltrosAdmin();
+    renderOrdensAdmin();
+    toastRapido(`🗑 Ordem Nº ${c.numero||"-"} excluída.`);
+  }catch(e){
+    console.error(e);
+    alert("Erro ao excluir: " + (e.code==="permission-denied" ? "sem permissão nas regras do Firebase." : (e.message||e)));
+  }finally{ setLoadingOrdens(false); }
+}
+function setLoadingOrdens(v){ document.querySelectorAll("#ordensLista button").forEach(b=> b.disabled = v); }
+/* remove do aparelho um controle excluído pelo admin (cache, lançamentos e fila offline) */
+function descartarControleLocal(id){
+  try{
+    const anims = JSON.parse(localStorage.getItem("animais_"+id) || "[]").map(a=>a.id);
+    localStorage.removeItem("animais_"+id);
+    filaOffline = filaOffline.filter(op=> op.id!==id && !anims.includes(op.id) && !(op.dados && op.dados.controleId===id));
+    salvarFilaLocal();
+    servicosCache = servicosCache.filter(s=> s.id!==id);
+    salvarCacheServicos();
+  }catch(e){}
 }
 Object.keys(ADMIN_ABAS).forEach(k=> $("atab-"+k).onclick = ()=> abrirAbaAdmin(k));
 
@@ -2524,12 +2874,7 @@ function horasTrabalhadasControle(s){
   const ini = paraMinutosHHMM(s.horaInicio);
   const fim = paraMinutosHHMM(s.horaTermino);
   if(ini==null || fim==null) return 0; // só entra na média quem já finalizou a operação
-  let minutos = fim - ini;
-  if(s.intervalo && s.retorno){
-    const pIni = paraMinutosHHMM(s.intervalo), pFim = paraMinutosHHMM(s.retorno);
-    if(pIni!=null && pFim!=null) minutos -= Math.max(0, pFim - pIni);
-  }
-  return Math.max(0, minutos) / 60;
+  return minutosTrabalhados(s, false) / 60;
 }
 function qtdAnimal(a){ return a.tipoAuditoria==="confinamento" ? (Number(a.quantidade)||0) : 1; }
 function renderAtivosAgora(docsRecentes){
