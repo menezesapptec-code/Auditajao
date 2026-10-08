@@ -412,6 +412,7 @@ tr.editavel:hover td{background:#f4faf6;}
       <button class="btn-secondary sub-tab" id="atab-auditores">Auditores</button>
       <button class="btn-secondary sub-tab" id="atab-retiros">🏠 Retiros</button>
       <button class="btn-secondary sub-tab" id="atab-ordens">🗂 Ordens</button>
+      <button class="btn-secondary sub-tab" id="atab-registro">📝 Registro</button>
     </div>
   </div>
 
@@ -524,6 +525,19 @@ tr.editavel:hover td{background:#f4faf6;}
     </div>
   </div>
 
+  <div id="adminRegistroView" class="hidden">
+    <div class="card">
+      <h2>Registro de alterações dos administradores</h2>
+      <p class="sub">Tudo o que um admin muda no painel fica registrado aqui: quem fez, quando e o que mudou. Não pode ser apagado.</p>
+      <div class="grid">
+        <div><label>Admin</label><select id="registroFiltroAdmin"><option value="">Todos</option></select></div>
+        <div><label>Buscar</label><input id="registroBusca" placeholder="Ex: retiro, ordem 012, auditor..."></div>
+      </div>
+      <div id="registroLista" style="margin-top:12px;"></div>
+      <button class="btn-secondary btn-block" id="btnRegistroMais" style="margin-top:10px;">Carregar mais</button>
+    </div>
+  </div>
+
   <div id="adminOrdensView" class="hidden">
     <div class="card">
       <h2>Ordens (controles de serviço)</h2>
@@ -549,14 +563,6 @@ tr.editavel:hover td{background:#f4faf6;}
   </div>
 
   <div id="adminAuditoresView" class="hidden">
-    <div class="card" style="border:2px solid #a9382f;">
-      <h2 style="color:#a9382f;">⚠ Zerar sistema (temporário)</h2>
-      <p class="sub">Apaga todos os lançamentos (animais) e controles de serviço de todos os auditores e volta o Nº do controle pra 001. Não tem como desfazer. Pede senha.</p>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0;"><input type="checkbox" id="resetAuditores" style="width:auto;"> Também apagar os auditores cadastrados</label>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0;"><input type="checkbox" id="resetRetiros" style="width:auto;"> Também apagar os retiros cadastrados</label>
-      <button class="btn-danger btn-block" id="btnResetSistema" style="margin-top:8px;padding:12px;">🗑 Zerar todas as informações</button>
-      <p class="sub" id="resetStatus" style="margin-top:8px;"></p>
-    </div>
     <div class="card">
       <h2>Cadastrar novo auditor</h2>
       <div class="grid">
@@ -1413,9 +1419,10 @@ function textoPausas(s, sep){
 }
 /* minutos efetivamente trabalhados: do início até o término (ou até agora, se em andamento),
    descontando todas as pausas */
-function minutosTrabalhados(s, ateAgora){
+function minutosTrabalhados(s, ateAgora, fimSeAberto){
   const ini = horaParaMin(s.horaInicio);
   let fim = horaParaMin(s.horaTermino);
+  if(fim==null && fimSeAberto) fim = horaParaMin(fimSeAberto);
   if(fim==null && ateAgora) fim = horaParaMin(horaAgoraHHMM());
   if(ini==null || fim==null || fim<=ini) return 0;
   let min = fim - ini;
@@ -1914,6 +1921,7 @@ function renderRetirosConfig(){
       if(!isAdmin) return;
       if(!confirm(`Remover o retiro "${r}" da lista?\n(As auditorias já feitas nele continuam salvas.)`)) return;
       configCache.retiros.splice(i,1);
+      registrarLog("Retiro removido", `Retiro: ${r}`);
       renderRetirosConfig(); gravarRetiroServidor(r, true).then(()=>{ if(navigator.onLine) carregarConfig().then(renderRetirosConfig); });
     };
     wrap.appendChild(row);
@@ -1928,6 +1936,7 @@ function adicionarRetiro(){
   configCache.retiros.push(v);
   configCache.retiros.sort((a,b)=>a.localeCompare(b,"pt-BR"));
   $("novoRetiroInput").value = "";
+  registrarLog("Retiro cadastrado", `Retiro: ${v}`);
   renderRetirosConfig(); gravarRetiroServidor(v);
   $("novoRetiroInput").focus();
 }
@@ -2354,7 +2363,7 @@ function calcularResumo(){
   $("cConf").textContent=conf; $("cRecria").textContent=recria; $("cRefugo").textContent=refugo; $("cOutro").textContent=outro;
   $("cPendentes").textContent=pend;
   const s = servicoAtual || {};
-  const minutos = minutosTrabalhados(s, true);
+  const minutos = minutosDoControle(s, animaisAtual);
   $("cAnimaisHora").textContent = minutos>0 ? Math.round(total/(minutos/60)) : 0;
 }
 
@@ -2615,7 +2624,7 @@ $("medSave").onclick = async ()=>{
 };
 
 /* ================= ADMIN ================= */
-const ADMIN_ABAS = { visao:"adminVisaoView", monitoramento:"adminMonitoramentoView", auditores:"adminAuditoresView", retiros:"adminRetirosView", ordens:"adminOrdensView" };
+const ADMIN_ABAS = { visao:"adminVisaoView", monitoramento:"adminMonitoramentoView", auditores:"adminAuditoresView", retiros:"adminRetirosView", ordens:"adminOrdensView", registro:"adminRegistroView" };
 function abrirAbaAdmin(aba){
   Object.entries(ADMIN_ABAS).forEach(([k,view])=>{
     $("atab-"+k).classList.toggle("active", k===aba);
@@ -2625,7 +2634,62 @@ function abrirAbaAdmin(aba){
   if(aba==="auditores") renderAuditoresList();
   if(aba==="retiros") abrirRetiros();
   if(aba==="ordens") renderOrdensAdmin();
+  if(aba==="registro") carregarRegistro(true);
 }
+/* ---- Registro (log) das ações dos admins ----
+   Cada alteração vira um documento em "logsAdmin": {quando, adminEmail, acao, detalhe}.
+   As regras do Firebase só deixam admin criar e ler — ninguém edita nem apaga. */
+async function registrarLog(acao, detalhe){
+  if(!isAdmin || !currentUser) return;
+  try{
+    await db.collection("logsAdmin").add({
+      quando: Date.now(), quandoServidor: firebase.firestore.FieldValue.serverTimestamp(),
+      adminEmail: currentUser.email || "", adminUid: currentUser.uid, acao, detalhe: detalhe || ""
+    });
+  }catch(e){ console.error("Falha ao registrar log:", e); }
+}
+let registroCache = [], registroLimite = 100;
+async function carregarRegistro(reset){
+  if(reset) registroLimite = 100;
+  const wrap = $("registroLista");
+  wrap.innerHTML = `<p class="pending">Carregando...</p>`;
+  try{
+    const snap = await db.collection("logsAdmin").orderBy("quando","desc").limit(registroLimite).get();
+    registroCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  }catch(e){
+    console.error(e);
+    wrap.innerHTML = `<p class="pending">Não foi possível carregar o registro${e.code==="permission-denied"?" (falta liberar 'logsAdmin' nas regras do Firebase)":""}.</p>`;
+    return;
+  }
+  const sel = $("registroFiltroAdmin"), atual = sel.value;
+  const admins = [...new Set(registroCache.map(l=>l.adminEmail).filter(Boolean))].sort();
+  sel.innerHTML = `<option value="">Todos</option>` + admins.map(a=>`<option value="${a}">${a}</option>`).join("");
+  if(admins.includes(atual)) sel.value = atual;
+  $("btnRegistroMais").classList.toggle("hidden", registroCache.length < registroLimite);
+  renderRegistro();
+}
+function renderRegistro(){
+  const wrap = $("registroLista");
+  const fAdmin = $("registroFiltroAdmin").value;
+  const q = ($("registroBusca").value||"").trim().toLowerCase();
+  let lista = registroCache;
+  if(fAdmin) lista = lista.filter(l=> l.adminEmail===fAdmin);
+  if(q) lista = lista.filter(l=> (l.acao+" "+l.detalhe+" "+l.adminEmail).toLowerCase().includes(q));
+  if(!lista.length){ wrap.innerHTML = `<p class="pending">Nenhum registro${q||fAdmin?" nesse filtro":" ainda"}.</p>`; return; }
+  const esc = t=> String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  wrap.innerHTML = lista.map(l=>{
+    const d = new Date(l.quando||0);
+    const quando = `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+    return `<div class="list-item" style="display:block;">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><strong>${esc(l.acao)}</strong><span class="meta">${quando}</span></div>
+      <div class="meta" style="margin-top:2px;">👤 ${esc(l.adminEmail)}</div>
+      ${l.detalhe?`<div style="font-size:13px;margin-top:4px;white-space:pre-line;">${esc(l.detalhe)}</div>`:""}
+    </div>`;
+  }).join("");
+}
+$("registroFiltroAdmin").addEventListener("change", renderRegistro);
+$("registroBusca").addEventListener("input", renderRegistro);
+$("btnRegistroMais").onclick = ()=>{ registroLimite += 100; carregarRegistro(false); };
 function renderOrdensAdmin(){
   const wrap = $("ordensLista"); if(!wrap) return;
   const q = ($("ordensBusca").value||"").trim().toLowerCase();
@@ -2659,6 +2723,9 @@ $("ordensData").addEventListener("change", renderOrdensAdmin);
 async function excluirOrdemAdmin(c, qtd){
   if(!isAdmin) return;
   if(!navigator.onLine){ alert("Precisa estar online pra excluir."); return; }
+  const senha = prompt("Digite a senha pra excluir a ordem:");
+  if(senha === null) return;
+  if(senha.trim() !== SENHA_EXCLUSAO){ alert("Senha incorreta."); return; }
   if(!confirm(`Excluir a ordem Nº ${c.numero||"-"} (${formatarDataBR(c.data)} · ${c.retiro||"sem retiro"} · ${c.criadoPorNome||"-"})?\n\nVai apagar o controle e os ${qtd} animal(is) lançados nele. Não dá pra desfazer.`)) return;
   try{
     setLoadingOrdens(true);
@@ -2674,6 +2741,7 @@ async function excluirOrdemAdmin(c, qtd){
     // avisa os outros aparelhos pra descartarem o que tiverem guardado dessa ordem
     await db.collection("config").doc("geral").set({ controlesExcluidos: firebase.firestore.FieldValue.arrayUnion(c.id) }, {merge:true});
     descartarControleLocal(c.id);
+    registrarLog("Ordem excluída", `Nº ${c.numero||"-"} · ${formatarDataBR(c.data)} · retiro ${c.retiro||"—"} · auditor ${c.criadoPorNome||"-"} · ${qtd} animal(is) apagados`);
     adminAnimaisCache = adminAnimaisCache.filter(a=> a.controleId !== c.id);
     adminControlesCache = adminControlesCache.filter(x=> x.id !== c.id);
     aplicarFiltrosAdmin();
@@ -2870,11 +2938,19 @@ function paraMinutosHHMM(hhmm){
   if(p.length<2) return null;
   return Number(p[0])*60 + Number(p[1]);
 }
-function horasTrabalhadasControle(s){
-  const ini = paraMinutosHHMM(s.horaInicio);
-  const fim = paraMinutosHHMM(s.horaTermino);
-  if(ini==null || fim==null) return 0; // só entra na média quem já finalizou a operação
-  return minutosTrabalhados(s, false) / 60;
+/* Horas trabalhadas de um controle (descontando pausas):
+   - finalizado: início → término
+   - em andamento hoje: início → agora
+   - de outro dia e não finalizado: início → hora do último animal lançado */
+function hhmmDeMillis(ms){ const d = new Date(ms); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+function minutosDoControle(s, animaisDoControle){
+  if(s.horaTermino) return minutosTrabalhados(s, false);
+  if(s.data === hojeLocalISO()) return minutosTrabalhados(s, true);
+  const ult = (animaisDoControle||[]).reduce((m,a)=> Math.max(m, Number(a.criadoEmLocal)||0), 0);
+  return ult ? minutosTrabalhados(s, false, hhmmDeMillis(ult)) : 0;
+}
+function horasTrabalhadasControle(s, animaisDoControle){
+  return minutosDoControle(s, animaisDoControle) / 60;
 }
 function qtdAnimal(a){ return a.tipoAuditoria==="confinamento" ? (Number(a.quantidade)||0) : 1; }
 function renderAtivosAgora(docsRecentes){
@@ -2920,7 +2996,7 @@ function renderMonitoramento(){
     let horas = 0;
     info.controleIds.forEach(cid=>{
       const c = controlesPorId[cid];
-      if(c && (c.criadoPorNome||c.criadoPor)===nome) horas += horasTrabalhadasControle(c);
+      if(c && (c.criadoPorNome||c.criadoPor)===nome) horas += horasTrabalhadasControle(c, adminAnimaisCache.filter(a=>a.controleId===cid));
     });
     info.horas = horas;
     info.animaisHora = horas>0 ? Math.round((info.animais/horas)*10)/10 : 0;
@@ -3365,65 +3441,16 @@ $("aeSave").onclick = async ()=>{
   const dados = { raca:$("aeRaca").value, categoria:$("aeCategoria").value, origem:$("aeOrigem").value.trim(), destino:$("aeDestino").value, pasto:$("aePasto").value.trim(), destinoDetalhe:$("aeDestinoDetalhe").value.trim(), carimbo:parseFloat($("aeCarimbo").value)||0, obs:$("aeObs").value.trim() };
   try{
     await db.collection("animais").doc(animalEditandoAdmin.id).update(dados);
+    const antes = animalEditandoAdmin, rot = {raca:"Raça",categoria:"Categoria",origem:"Origem",destino:"Destino",pasto:"Pasto",destinoDetalhe:"Curral/pasto destino",carimbo:"Carimbo",obs:"Obs"};
+    const mudancas = Object.keys(dados).filter(k=> String(antes[k]??"") !== String(dados[k]??"")).map(k=>`${rot[k]||k}: "${antes[k]??""}" → "${dados[k]}"`);
+    registrarLog("Lançamento editado", `Controle ${antes.controleNumero||"-"} · Ord. ${antes.ord} · ${formatarDataBR(antes.data)}\n` + (mudancas.join("\n") || "(sem mudança)"));
     $("modalAdminEdit").classList.add("hidden");
     await carregarResumoAdmin();
     alert("Lançamento atualizado.");
   }catch(e){ console.error(e); alert("Erro ao salvar."); }
 };
 
-/* ---- ZERAR SISTEMA (botão temporário, só admin, com senha) ---- */
-const SENHA_RESET = "369258";
-async function apagarColecaoInteira(nome, onProgress){
-  let total = 0;
-  while(true){
-    const snap = await db.collection(nome).limit(400).get();
-    if(snap.empty) break;
-    const batch = db.batch();
-    snap.docs.forEach(d=> batch.delete(d.ref));
-    await batch.commit();
-    total += snap.size;
-    if(onProgress) onProgress(total);
-  }
-  return total;
-}
-$("btnResetSistema").onclick = async ()=>{
-  if(!isAdmin) return;
-  if(!navigator.onLine){ alert("Precisa estar online pra zerar o sistema."); return; }
-  const senha = prompt("Digite a senha pra zerar o sistema:");
-  if(senha === null) return;
-  if(senha.trim() !== SENHA_RESET){ alert("Senha incorreta."); return; }
-  const apagaAud = $("resetAuditores").checked, apagaRet = $("resetRetiros").checked;
-  const extras = [apagaAud ? "auditores" : "", apagaRet ? "retiros" : ""].filter(Boolean).join(" e ");
-  if(!confirm(`Tem certeza? Vai apagar TODOS os animais e controles${extras ? " + "+extras : ""}. Não dá pra desfazer.`)) return;
-  const st = $("resetStatus");
-  $("btnResetSistema").disabled = true;
-  try{
-    st.textContent = "Apagando animais...";
-    const nA = await apagarColecaoInteira("animais", n=> st.textContent = `Apagando animais... ${n}`);
-    st.textContent = "Apagando controles...";
-    const nC = await apagarColecaoInteira("controles", n=> st.textContent = `Apagando controles... ${n}`);
-    let nAud = 0;
-    if(apagaAud){ st.textContent = "Apagando auditores..."; nAud = await apagarColecaoInteira("auditores"); }
-    // marca o reset no config: os outros aparelhos limpam o que tiverem guardado localmente
-    const resetEm = Date.now();
-    const dadosCfg = { proximoNumeroControle: 1, resetEm };
-    if(apagaRet) dadosCfg.retiros = [];
-    await db.collection("config").doc("geral").set(dadosCfg, {merge:true});
-    configCache.proximoNumeroControle = 1;
-    if(apagaRet) configCache.retiros = [];
-    limparDadosLocais(resetEm);
-    st.textContent = `✅ Sistema zerado: ${nA} lançamentos e ${nC} controles apagados${apagaAud?`, ${nAud} auditores`:""}${apagaRet?", retiros apagados":""}.`;
-    alert(st.textContent + (apagaAud ? "\n\nObs: as contas de login (e-mail/senha) dos auditores continuam no Firebase Authentication — ao cadastrar de novo com a mesma senha, o app reaproveita." : ""));
-    await carregarResumoAdmin();
-    if(!$("adminAuditoresView").classList.contains("hidden")) renderAuditoresList();
-  }catch(e){
-    console.error(e);
-    st.textContent = "⚠ Erro ao zerar: " + (e.code==="permission-denied" ? "sem permissão nas regras do Firebase." : (e.message||e));
-    alert(st.textContent);
-  }finally{
-    $("btnResetSistema").disabled = false;
-  }
-};
+const SENHA_EXCLUSAO = "369258";
 /* Limpa caches locais (controles, lançamentos, fila offline) — usado no reset e quando
    este aparelho descobre que o sistema foi zerado em outro lugar */
 function limparDadosLocais(resetEm){
@@ -3458,14 +3485,14 @@ async function renderAuditoresList(){
     btn.onclick = async ()=>{
       const email = btn.dataset.reset;
       if(!confirm(`Mandar e-mail de redefinição de senha pra ${email}?`)) return;
-      try{ await auth.sendPasswordResetEmail(email); alert("E-mail de redefinição enviado."); }
+      try{ await auth.sendPasswordResetEmail(email); registrarLog("Redefinição de senha enviada", `Auditor: ${email}`); alert("E-mail de redefinição enviado."); }
       catch(e){ console.error(e); alert("Erro ao enviar e-mail."); }
     };
   });
   wrap.querySelectorAll("button[data-uid]").forEach(btn=>{
     btn.onclick = async ()=>{
       const uidAl = btn.dataset.uid; const doc = docs.find(d=>d.uid===uidAl);
-      try{ await db.collection("auditores").doc(uidAl).update({ativo: !doc.ativo}); renderAuditoresList(); }
+      try{ await db.collection("auditores").doc(uidAl).update({ativo: !doc.ativo}); registrarLog(doc.ativo ? "Auditor bloqueado" : "Auditor desbloqueado", `${doc.nome||""} (${doc.email||""})`); renderAuditoresList(); }
       catch(e){ console.error(e); alert("Erro ao atualizar."); }
     };
   });
@@ -3488,6 +3515,7 @@ $("btnAddAuditor").onclick = async ()=>{
     await db.collection("auditores").doc(newUid).set({ nome, email, ativo:true, createdAt: firebase.firestore.FieldValue.serverTimestamp(), createdBy: currentUser.uid }, {merge:true});
     await secondaryAuth.signOut();
     $("audNome").value=""; $("audEmail").value=""; $("audSenha").value="";
+    registrarLog("Auditor cadastrado", `${nome} (${email})`);
     alert("Auditor cadastrado com sucesso.");
     renderAuditoresList();
   }catch(e){ console.error(e); alert("Erro ao cadastrar auditor."); }
