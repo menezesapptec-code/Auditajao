@@ -585,7 +585,7 @@ tr.editavel:hover td{background:#f4faf6;}
 <div id="viewCarimbos" class="container hidden">
   <div class="card">
     <h2>Animais por carimbo</h2>
-    <p class="sub">Quantos animais caíram em cada carimbo (@). Toque num lote pra lançar o Destino — vale pros animais daquele carimbo (por raça) no filtro. A Origem vem do controle. Depois de lançado, só o administrador pode alterar.</p>
+    <p class="sub">Quantos animais caíram em cada carimbo (@). Toque num lote pra lançar o Destino — vale pros animais daquele carimbo (por raça) no filtro. Depois de lançado, só o administrador pode alterar.</p>
     <div class="grid">
       <div><label>Data</label><input type="date" id="carimboFiltroData"></div>
       <div><label>Nº da ordem (opcional)</label><input id="carimboFiltroNumero" placeholder="Todas" inputmode="numeric"></div>
@@ -601,7 +601,7 @@ tr.editavel:hover td{background:#f4faf6;}
     <div id="carimboPorRaca" style="margin-bottom:12px;"></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Carimbo (@)</th><th>Retiro</th><th>Animais</th><th>Total @</th><th>Origem</th><th>Destino</th></tr></thead>
+        <thead><tr><th>Carimbo (@)</th><th>Retiro</th><th>Animais</th><th>Total @</th><th>Destino</th></tr></thead>
         <tbody id="tabelaCarimbos"></tbody>
       </table>
     </div>
@@ -859,8 +859,40 @@ async function calcularProximaOrdemParaData(dataISO, retiro){
   infoOrdemDoDia = { qtd: idsContados.size, retiro: retiro||"" };
   return maxOrd+1;
 }
-function salvarFilaLocal(){ localStorage.setItem(FILA_KEY, JSON.stringify(filaOffline)); }
-function carregarFilaLocal(){ filaOffline = JSON.parse(localStorage.getItem(FILA_KEY) || "[]"); }
+/* Fila offline: cada operação ganha uma chave única (k) — é por ela que a operação sai da
+   fila depois de enviada (antes era pela referência do objeto, e se a fila fosse relida do
+   aparelho no meio do envio nada saía e tudo era reenviado sem parar). */
+function chaveOp(){ return 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function salvarFilaLocal(){
+  filaOffline.forEach(op=>{ if(!op.k) op.k = chaveOp(); });
+  localStorage.setItem(FILA_KEY, JSON.stringify(filaOffline));
+}
+function carregarFilaLocal(){
+  try{ filaOffline = JSON.parse(localStorage.getItem(FILA_KEY) || "[]"); }catch(e){ filaOffline = []; }
+  compactarFila();
+}
+/* Junta operações repetidas do mesmo documento numa só (o resultado final é o mesmo, porque
+   tudo é gravado com merge) — evita reenviar centenas de vezes o mesmo animal/controle. */
+function compactarFila(){
+  const out = []; const idx = {};
+  filaOffline.forEach(op=>{
+    if(!op || !op.id) return;
+    const col = (op.tipo==="novoServico"||op.tipo==="updServico") ? "c" : "a";
+    const key = col + ":" + op.id;
+    if(op.tipo==="delAnimal"){
+      if(idx[key]!==undefined){ out[idx[key]] = null; }
+      idx[key] = out.length; out.push({tipo:"delAnimal", id:op.id, k:op.k||chaveOp()});
+      return;
+    }
+    if(idx[key]!==undefined && out[idx[key]] && out[idx[key]].tipo!=="delAnimal"){
+      Object.assign(out[idx[key]].dados, op.dados||{});
+    } else {
+      idx[key] = out.length; out.push({tipo:op.tipo, id:op.id, dados:{...(op.dados||{})}, k:op.k||chaveOp()});
+    }
+  });
+  filaOffline = out.filter(Boolean);
+  salvarFilaLocal();
+}
 function salvarCacheServicos(){ localStorage.setItem(CACHE_KEY, JSON.stringify(servicosCache)); }
 function carregarCacheServicos(){ servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]"); }
 
@@ -877,7 +909,11 @@ function setNavActive(target){
 function atualizarStatusSync(){
   const el = $("syncStatus");
   if(!navigator.onLine){ el.textContent = "Offline"; el.classList.add("offline"); }
-  else if(filaOffline.length>0){ el.textContent = `Sincronizando (${filaOffline.length})`; el.classList.add("offline"); }
+  else if(filaOffline.length>0){
+    const motivo = erroSyncAtual==="limite" ? " · limite diário do banco" : erroSyncAtual==="permissao" ? " · sem permissão" : "";
+    el.textContent = `Sincronizando (${filaOffline.length})${motivo}`; el.classList.add("offline");
+    el.title = erroSyncAtual==="limite" ? "O limite diário gratuito do Firebase foi atingido — os lançamentos estão salvos neste aparelho e sobem sozinhos quando o limite renovar." : "";
+  }
   else { el.textContent = "Online"; el.classList.remove("offline"); }
   const pm = $("pendingMsg");
   if(pm) pm.textContent = filaOffline.length>0 ? `${filaOffline.length} lançamento(s) aguardando conexão para sincronizar.` : "";
@@ -887,28 +923,51 @@ window.addEventListener("offline", atualizarStatusSync);
 
 /* ================= FILA OFFLINE ================= */
 let ultimaLeituraConfig = 0;
+let sincronizandoAgora = false;   // trava: nunca roda dois envios ao mesmo tempo
+let erroSyncAtual = "";
 async function processarFila(){
-  if(!navigator.onLine || filaOffline.length===0){ atualizarStatusSync(); return; }
-  // de tempos em tempos confere se o admin excluiu alguma ordem (pra não reenviar dados dela)
-  if(currentUser && Date.now() - ultimaLeituraConfig > 120000){ ultimaLeituraConfig = Date.now(); try{ await carregarConfig(); }catch(e){} }
-  const pendentes = [...filaOffline];
-  for(const op of pendentes){
-    try{
-      if((configCache.controlesExcluidos||[]).includes(op.id) || (op.dados && (configCache.controlesExcluidos||[]).includes(op.dados.controleId))){
-        filaOffline = filaOffline.filter(f=>f!==op); salvarFilaLocal(); continue;
+  if(!navigator.onLine || filaOffline.length===0){ erroSyncAtual = ""; atualizarStatusSync(); return; }
+  if(sincronizandoAgora || !currentUser) return;
+  sincronizandoAgora = true;
+  try{
+    // de tempos em tempos confere se o admin excluiu alguma ordem (pra não reenviar dados dela)
+    if(Date.now() - ultimaLeituraConfig > 120000){ ultimaLeituraConfig = Date.now(); try{ await carregarConfig(); }catch(e){} }
+    compactarFila();
+    const excl = new Set(configCache.controlesExcluidos||[]);
+    const pendentes = [...filaOffline];
+    for(const op of pendentes){
+      const tirar = ()=>{ filaOffline = filaOffline.filter(f=> f.k !== op.k); salvarFilaLocal(); };
+      if(excl.has(op.id) || (op.dados && excl.has(op.dados.controleId))){ tirar(); continue; }
+      // data de criação que passou pelo armazenamento do aparelho vira objeto comum — refaz com a hora do servidor
+      if(op.dados && op.dados.criadoEm && typeof op.dados.criadoEm==="object" && !(op.dados.criadoEm instanceof firebase.firestore.FieldValue)){
+        op.dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp();
       }
-      if(op.tipo==="novoServico" || op.tipo==="updServico"){
-        await db.collection("controles").doc(op.id).set(op.dados, {merge:true});
-      } else if(op.tipo==="novoAnimal" || op.tipo==="updAnimal"){
-        await db.collection("animais").doc(op.id).set(op.dados, {merge:true});
-      } else if(op.tipo==="delAnimal"){
-        await db.collection("animais").doc(op.id).delete();
+      try{
+        if(op.tipo==="novoServico" || op.tipo==="updServico"){
+          await db.collection("controles").doc(op.id).set(op.dados, {merge:true});
+        } else if(op.tipo==="novoAnimal" || op.tipo==="updAnimal"){
+          await db.collection("animais").doc(op.id).set(op.dados, {merge:true});
+        } else if(op.tipo==="delAnimal"){
+          await db.collection("animais").doc(op.id).delete();
+        }
+        tirar();
+        erroSyncAtual = "";
+        atualizarStatusSync();
+      }catch(e){
+        console.error("Erro ao sincronizar:", e);
+        if(e && e.code === "invalid-argument"){
+          // dado com defeito: guarda à parte (pra não travar o resto da fila) e segue
+          try{ const er = JSON.parse(localStorage.getItem("cs_fila_erros")||"[]"); er.push({...op, erro:String(e.message||e)}); localStorage.setItem("cs_fila_erros", JSON.stringify(er)); }catch(_){}
+          tirar(); continue;
+        }
+        erroSyncAtual = e && e.code==="resource-exhausted" ? "limite" : (e && e.code==="permission-denied" ? "permissao" : "erro");
+        break;
       }
-      filaOffline = filaOffline.filter(f=>f!==op);
-      salvarFilaLocal();
-    }catch(e){ console.error("Erro ao sincronizar:", e); break; }
+    }
+  } finally {
+    sincronizandoAgora = false;
+    atualizarStatusSync();
   }
-  atualizarStatusSync();
 }
 setInterval(processarFila, 15000);
 
@@ -975,8 +1034,17 @@ async function abrirLista(){
   renderLista(servicosCache);
   if(navigator.onLine){
     try{
-      const snap = await db.collection("controles").where("criadoPor","==",currentUser.uid).orderBy("criadoEmLocal","desc").limit(500).get();
-      servicosCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+      const snap = await db.collection("controles").where("criadoPor","==",currentUser.uid).get();
+      const doServidor = snap.docs.map(d=>({id:d.id, ...d.data()}));
+      const idsServ = new Set(doServidor.map(c=>c.id));
+      // controles criados neste aparelho que ainda estão na fila (não chegaram no banco) continuam na lista
+      const idsNaFila = new Set(filaOffline.filter(op=>op.tipo==="novoServico"||op.tipo==="updServico").map(op=>op.id));
+      const soLocais = servicosCache.filter(c=> !idsServ.has(c.id) && idsNaFila.has(c.id));
+      // junta com o que o aparelho já sabe de mais novo (ex.: pausas ainda na fila)
+      const locaisPorId = {}; servicosCache.forEach(c=> locaisPorId[c.id] = c);
+      servicosCache = doServidor.map(c=> idsNaFila.has(c.id) && locaisPorId[c.id] ? {...c, ...locaisPorId[c.id]} : c)
+        .concat(soLocais)
+        .sort((a,b)=> (b.criadoEmLocal||0) - (a.criadoEmLocal||0));
       salvarCacheServicos();
       renderLista(servicosCache);
     }catch(e){ console.error(e); }
@@ -1321,8 +1389,18 @@ async function abrirServico(id, novo=false){
     try{
       const doc = await db.collection("controles").doc(id).get();
       if(doc.exists){ servicoAtual = {id, ...doc.data()}; }
-      const snap = await db.collection("animais").where("controleId","==",id).orderBy("ord").get();
-      animaisAtual = snap.docs.map(d=>({id:d.id, ...d.data()}));
+      const snap = await db.collection("animais").where("controleId","==",id).get();
+      const doServidor = snap.docs.map(d=>({id:d.id, ...d.data()}));
+      const idsServ = new Set(doServidor.map(a=>a.id));
+      const naFila = new Set(filaOffline.map(op=>op.id));
+      const excluidosNaFila = new Set(filaOffline.filter(op=>op.tipo==="delAnimal").map(op=>op.id));
+      const locaisPorId = {}; animaisAtual.forEach(a=> locaisPorId[a.id] = a);
+      // animais deste aparelho ainda não enviados continuam; alterações pendentes valem sobre o servidor
+      const soLocais = animaisAtual.filter(a=> !idsServ.has(a.id) && naFila.has(a.id));
+      animaisAtual = doServidor.filter(a=> !excluidosNaFila.has(a.id))
+        .map(a=> naFila.has(a.id) && locaisPorId[a.id] ? {...a, ...locaisPorId[a.id]} : a)
+        .concat(soLocais)
+        .sort((a,b)=>(Number(a.ord)||0)-(Number(b.ord)||0));
       localStorage.setItem("animais_"+id, JSON.stringify(animaisAtual));
     }catch(e){ console.error(e); }
   }
@@ -1696,7 +1774,6 @@ function renderCarimbos(){
     const extra = (!travado && pend<g.n) ? `<div class="meta" style="color:var(--verde);font-weight:600;">➕ faltam ${pend}: ${resumoRacas(pendAnim)} — toque pra lançar</div>` : "";
     return `<tr data-grupo="${i}" style="cursor:${travado?"default":"pointer"};">
       <td><strong>${fmt(g.valor)} @</strong></td><td>${g.retiro}</td><td>${g.n} ${g.n===1?"animal":"animais"}<div class="meta">${resumoRacas(g.animais)}</div></td><td>${fmt(g.valor*g.n)}</td>
-      <td>${origem || "<span style='color:var(--cinza);'>—</span>"}</td>
       <td>${travado?"🔒 ":""}${destino || (travado?"—":"<span style='color:var(--cinza);'>toque pra lançar</span>")}${extra}</td></tr>`;
   }).join("");
   document.querySelectorAll("#tabelaCarimbos tr[data-grupo]").forEach(tr=>{
@@ -1850,10 +1927,10 @@ async function carregarConfig(){
       if(Array.isArray(d.retiros)) configCache.retiros = d.retiros;
       configCache.controlesExcluidos = Array.isArray(d.controlesExcluidos) ? d.controlesExcluidos : [];
       if(Array.isArray(d.controlesExcluidos) && d.controlesExcluidos.length){
-        const exc = new Set(d.controlesExcluidos);
+        // só lê do aparelho se ainda não carregou (login); no meio do uso trabalha na memória
         try{
-          filaOffline = JSON.parse(localStorage.getItem(FILA_KEY) || "[]");
-          servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]");
+          if(!filaOffline.length) filaOffline = JSON.parse(localStorage.getItem(FILA_KEY) || "[]");
+          if(!servicosCache.length) servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]");
         }catch(e){}
         d.controlesExcluidos.forEach(id=>{ if(localStorage.getItem("animais_"+id)!==null || servicosCache.some(s=>s.id===id) || filaOffline.some(op=>op.id===id || (op.dados&&op.dados.controleId===id))) descartarControleLocal(id); });
       }
