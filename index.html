@@ -766,6 +766,26 @@ tr.editavel:hover td{background:#f4faf6;}
   </div>
 </div>
 
+<!-- MODAL: CORRIGIR HORÁRIOS DA ORDEM (admin) -->
+<div id="modalHorarios" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div class="card" style="max-width:460px;width:100%;max-height:90vh;overflow:auto;">
+    <h2>🕘 Corrigir horários</h2>
+    <p class="sub" id="mhSub">—</p>
+    <div class="grid">
+      <div><label>Início</label><input type="time" id="mhInicio"></div>
+      <div><label>Término</label><input type="time" id="mhTermino"></div>
+    </div>
+    <label style="margin-top:12px;">Pausas</label>
+    <div id="mhPausas"></div>
+    <button class="btn-secondary btn-block" id="mhAddPausa" style="margin-top:6px;">+ Adicionar pausa</button>
+    <p class="sub" id="mhResumo" style="margin-top:10px;"></p>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn-secondary" id="mhCancel">Cancelar</button>
+      <button class="btn-primary" id="mhSave">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: EDITAR LANÇAMENTO (admin) -->
 <div id="modalAdminEdit" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;">
   <div class="card" style="max-width:420px;width:100%;">
@@ -2964,12 +2984,80 @@ function renderOrdensAdmin(){
     div.innerHTML = `<div>
         <div style="font-weight:600;">Nº ${c.numero||"-"} — ${formatarDataBR(c.data)} <span style="font-weight:400;font-size:12px;color:var(--cinza);">· ${tipo}${c._orfao?" · ⚠ sem controle":""}</span></div>
         <div class="meta">🏠 ${c.retiro||"Sem retiro"} · 👤 ${c.criadoPorNome||"-"} · ${qtdPorControle[c.id]||0} animais${c.horaTermino?" · finalizada":""}</div>
-      </div><button class="btn-danger" style="white-space:nowrap;">🗑 Excluir</button>`;
-    div.querySelector("button").onclick = ()=> excluirOrdemAdmin(c, qtdPorControle[c.id]||0);
+      </div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+        ${c._orfao?"":`<button class="btn-secondary" data-acao="horas" style="white-space:nowrap;padding:8px 12px;">🕘 Horários</button>`}
+        <button class="btn-danger" data-acao="excluir" style="white-space:nowrap;">🗑 Excluir</button></div>`;
+    div.querySelector('[data-acao="excluir"]').onclick = ()=> excluirOrdemAdmin(c, qtdPorControle[c.id]||0);
+    const bh = div.querySelector('[data-acao="horas"]'); if(bh) bh.onclick = ()=> abrirEditarHorarios(c);
+    div.querySelector(".meta").insertAdjacentHTML("beforeend", c._orfao ? "" : ` · 🕘 ${c.horaInicio||"--:--"} → ${c.horaTermino||"--:--"}${listaPausas(c).length?` · ${listaPausas(c).length} pausa(s)`:""}`);
     wrap.appendChild(div);
   });
 }
 $("ordensBusca").addEventListener("input", renderOrdensAdmin);
+/* ---- Corrigir horários de uma ordem (início, término e pausas) — só admin ---- */
+let ordemHorariosAtual = null, pausasEdit = [];
+function abrirEditarHorarios(c){
+  ordemHorariosAtual = c;
+  pausasEdit = listaPausas(c).map(p=>({...p}));
+  $("mhSub").textContent = `Ordem Nº ${c.numero||"-"} · ${formatarDataBR(c.data)} · ${c.retiro||"sem retiro"} · ${c.criadoPorNome||"-"}`;
+  $("mhInicio").value = c.horaInicio||"";
+  $("mhTermino").value = c.horaTermino||"";
+  renderPausasEdit();
+  $("modalHorarios").classList.remove("hidden");
+}
+function renderPausasEdit(){
+  const wrap = $("mhPausas");
+  wrap.innerHTML = pausasEdit.length ? "" : `<p class="pending">Sem pausas.</p>`;
+  pausasEdit.forEach((p,i)=>{
+    const row = document.createElement("div");
+    row.style.cssText = "display:grid;grid-template-columns:1fr 1fr 1.4fr auto;gap:6px;align-items:end;margin-bottom:6px;";
+    row.innerHTML = `<div><label style="font-size:11px;">Parou</label><input type="time" value="${p.inicio||""}" data-f="inicio"></div>
+      <div><label style="font-size:11px;">Voltou</label><input type="time" value="${p.fim||""}" data-f="fim"></div>
+      <div><label style="font-size:11px;">Motivo</label><input value="${(p.motivo||"").replace(/"/g,"&quot;")}" data-f="motivo"></div>
+      <button class="btn-danger" style="padding:9px 11px;">✕</button>`;
+    row.querySelectorAll("input").forEach(inp=> inp.oninput = ()=>{ pausasEdit[i][inp.dataset.f] = inp.value; atualizarResumoHorarios(); });
+    row.querySelector("button").onclick = ()=>{ pausasEdit.splice(i,1); renderPausasEdit(); };
+    wrap.appendChild(row);
+  });
+  atualizarResumoHorarios();
+}
+function atualizarResumoHorarios(){
+  const tmp = { horaInicio:$("mhInicio").value, horaTermino:$("mhTermino").value, pausas:pausasEdit };
+  const min = minutosTrabalhados(tmp, false);
+  const qtd = adminAnimaisCache.filter(a=>a.controleId===(ordemHorariosAtual&&ordemHorariosAtual.id)).reduce((t,a)=>t+qtdAnimal(a),0);
+  $("mhResumo").textContent = min>0 ? `Tempo trabalhado: ${fmtHoras(min/60)} · ${qtd} animais · ${(qtd/(min/60)).toLocaleString("pt-BR",{maximumFractionDigits:1})} animais/hora` : "Preencha início e término pra calcular o rendimento.";
+}
+["mhInicio","mhTermino"].forEach(id=> $(id).addEventListener("input", atualizarResumoHorarios));
+$("mhAddPausa").onclick = ()=>{ pausasEdit.push({inicio:"", fim:"", motivo:""}); renderPausasEdit(); };
+$("mhCancel").onclick = ()=>{ $("modalHorarios").classList.add("hidden"); ordemHorariosAtual = null; };
+$("mhSave").onclick = async ()=>{
+  const c = ordemHorariosAtual; if(!c) return;
+  const ini = $("mhInicio").value, fim = $("mhTermino").value;
+  if(!ini){ alert("Informe o horário de início."); return; }
+  if(fim && fim <= ini){ alert("O término tem que ser depois do início."); return; }
+  const pausas = pausasEdit.filter(p=>p.inicio).map(p=>({ inicio:p.inicio, fim:p.fim||"", motivo:(p.motivo||"").trim() }));
+  for(const p of pausas){
+    if(p.inicio < ini || (fim && p.inicio > fim)){ alert(`A pausa das ${p.inicio} está fora do horário de trabalho.`); return; }
+    if(p.fim && p.fim <= p.inicio){ alert(`A pausa das ${p.inicio} tem a volta antes da parada.`); return; }
+  }
+  pausas.sort((a,b)=> a.inicio.localeCompare(b.inicio));
+  const dados = { horaInicio: ini, horaTermino: fim, pausas };
+  const antes = `${c.horaInicio||"--:--"} → ${c.horaTermino||"--:--"}; pausas: ${textoPausas(c)||"nenhuma"}`;
+  const depois = `${ini} → ${fim||"--:--"}; pausas: ${textoPausas(dados)||"nenhuma"}`;
+  try{
+    await db.collection("controles").doc(c.id).set(dados, {merge:true});
+    Object.assign(c, dados);
+    const cc = adminControlesCache.find(x=>x.id===c.id); if(cc) Object.assign(cc, dados);
+    registrarLog("Horários da ordem corrigidos", `Nº ${c.numero||"-"} · ${formatarDataBR(c.data)} · ${c.retiro||"—"}\nAntes: ${antes}\nDepois: ${depois}`);
+    $("modalHorarios").classList.add("hidden");
+    renderOrdensAdmin();
+    if(!$("adminMonitoramentoView").classList.contains("hidden")) renderMonitoramento();
+    toastRapido("🕘 Horários atualizados.");
+  }catch(e){
+    console.error(e);
+    alert("Erro ao salvar: " + (e.code==="permission-denied" ? "sem permissão nas regras do Firebase." : (e.message||e)));
+  }
+};
 $("ordensData").addEventListener("change", renderOrdensAdmin);
 async function excluirOrdemAdmin(c, qtd){
   if(!isAdmin) return;
