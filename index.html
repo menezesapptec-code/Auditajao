@@ -413,6 +413,7 @@ tr.editavel:hover td{background:#f4faf6;}
       <button class="btn-secondary sub-tab" id="atab-retiros">🏠 Retiros</button>
       <button class="btn-secondary sub-tab" id="atab-ordens">🗂 Ordens</button>
       <button class="btn-secondary sub-tab" id="atab-registro">📝 Registro</button>
+      <button class="btn-secondary sub-tab" id="atab-compilado">📄 Compilado</button>
     </div>
   </div>
 
@@ -522,6 +523,39 @@ tr.editavel:hover td{background:#f4faf6;}
     <div class="card">
       <h2>Rendimento semanal (últimas 8 semanas)</h2>
       <div class="chart-box"><canvas id="chartRendimentoSemanal"></canvas></div>
+    </div>
+  </div>
+
+  <div id="adminCompiladoView" class="hidden">
+    <div class="card">
+      <h2>Compilado geral dos animais auditados</h2>
+      <p class="sub">Resumo de tudo numa folha só. Escolha o período e o retiro (em branco = tudo) e gere o PDF.</p>
+      <div class="grid">
+        <div><label>De</label><input type="date" id="compDe"></div>
+        <div><label>Até</label><input type="date" id="compAte"></div>
+        <div><label>Retiro</label><select id="compRetiro"></select></div>
+      </div>
+      <button class="btn-primary btn-block" id="btnCompiladoPDF" style="margin-top:10px;padding:13px;">⬇ Gerar PDF (1 folha)</button>
+    </div>
+    <div class="card">
+      <div class="counters" id="compKpis"></div>
+    </div>
+    <div class="card">
+      <h2>Animais por dia e média</h2>
+      <div class="chart-box"><canvas id="chartCompilado"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="grid">
+        <div><h2 style="font-size:15px;">Por raça</h2><div id="compRaca"></div></div>
+        <div><h2 style="font-size:15px;">Por carimbo</h2><div id="compCarimbo"></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Dias auditados</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Data</th><th>Animais</th><th>Horas trabalhadas</th><th>Animais/hora</th></tr></thead>
+        <tbody id="compDias"></tbody>
+      </table></div>
     </div>
   </div>
 
@@ -2701,7 +2735,7 @@ $("medSave").onclick = async ()=>{
 };
 
 /* ================= ADMIN ================= */
-const ADMIN_ABAS = { visao:"adminVisaoView", monitoramento:"adminMonitoramentoView", auditores:"adminAuditoresView", retiros:"adminRetirosView", ordens:"adminOrdensView", registro:"adminRegistroView" };
+const ADMIN_ABAS = { visao:"adminVisaoView", monitoramento:"adminMonitoramentoView", auditores:"adminAuditoresView", retiros:"adminRetirosView", ordens:"adminOrdensView", registro:"adminRegistroView", compilado:"adminCompiladoView" };
 function abrirAbaAdmin(aba){
   Object.entries(ADMIN_ABAS).forEach(([k,view])=>{
     $("atab-"+k).classList.toggle("active", k===aba);
@@ -2712,7 +2746,147 @@ function abrirAbaAdmin(aba){
   if(aba==="retiros") abrirRetiros();
   if(aba==="ordens") renderOrdensAdmin();
   if(aba==="registro") carregarRegistro(true);
+  if(aba==="compilado") abrirCompilado();
 }
+/* ================= COMPILADO GERAL (1 folha) ================= */
+function abrirCompilado(){
+  const sel = $("compRetiro"), atual = sel.value;
+  const retiros = [...new Set(adminAnimaisCache.map(a=>a._retiro).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  sel.innerHTML = `<option value="">Todos os retiros</option>` + retiros.map(r=>`<option value="${r}">${r}</option>`).join("");
+  if(retiros.includes(atual)) sel.value = atual;
+  renderCompilado();
+}
+function dadosCompilado(){
+  const de = $("compDe").value, ate = $("compAte").value, ret = $("compRetiro").value;
+  const lista = adminAnimaisCache.filter(a=>{
+    if(ret && a._retiro !== ret) return false;
+    if(de && (a.data||"") < de) return false;
+    if(ate && (a.data||"") > ate) return false;
+    return true;
+  });
+  const total = lista.reduce((t,a)=>t+qtdAnimal(a),0);
+  const arrobas = lista.reduce((t,a)=>t+(parseFloat(a.carimbo)||0),0);
+  // por raça (confinamento conta pela quantidade da linha)
+  const racaMap = {};
+  lista.forEach(a=>{ const r=(a.raca||"Sem raça"); racaMap[r]=(racaMap[r]||0)+qtdAnimal(a); });
+  const ordemR = ["Nelore","Cruzado","Anelorado"];
+  const racas = Object.entries(racaMap).sort((x,y)=>{ const ix=ordemR.indexOf(x[0]), iy=ordemR.indexOf(y[0]); if(ix!==-1||iy!==-1) return (ix===-1?99:ix)-(iy===-1?99:iy); return y[1]-x[1]; });
+  // por carimbo (só quem tem carimbo)
+  const carMap = {};
+  lista.filter(a=>a.tipoAuditoria!=="confinamento" && (parseFloat(a.carimbo)||0)>0).forEach(a=>{ const v=Math.round(parseFloat(a.carimbo)*10)/10; carMap[v]=(carMap[v]||0)+1; });
+  const carimbos = Object.keys(carMap).map(Number).sort((a,b)=>a-b).map(v=>[v, carMap[v]]);
+  // por dia: animais e horas (somando os controles daquele dia, com pausas descontadas)
+  const porDia = {};
+  lista.forEach(a=>{ const d=a.data||"—"; if(!porDia[d]) porDia[d]={animais:0, ctrl:new Set()}; porDia[d].animais+=qtdAnimal(a); porDia[d].ctrl.add(a.controleId); });
+  const ctrlPorId = {}; adminControlesCache.forEach(c=> ctrlPorId[c.id]=c);
+  const dias = Object.keys(porDia).sort().map(d=>{
+    let horas = 0, animaisComHora = 0;
+    porDia[d].ctrl.forEach(cid=>{
+      const c = ctrlPorId[cid]; if(!c) return;
+      const anims = lista.filter(a=>a.controleId===cid);
+      const h = horasTrabalhadasControle(c, anims);
+      if(h>0){ horas += h; animaisComHora += anims.reduce((t,a)=>t+qtdAnimal(a),0); }
+    });
+    return { data:d, animais:porDia[d].animais, horas, porHora: horas>0 ? animaisComHora/horas : 0, animaisComHora };
+  });
+  const horasTot = dias.reduce((t,d)=>t+d.horas,0);
+  const animComHoraTot = dias.reduce((t,d)=>t+d.animaisComHora,0);
+  const mediaDia = dias.length ? total/dias.length : 0;
+  return { lista, total, arrobas, racas, carimbos, dias, horasTot, porHora: horasTot>0 ? animComHoraTot/horasTot : 0, mediaDia, de, ate, ret };
+}
+const fmtN = (v,d=0)=> Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:d, maximumFractionDigits:d});
+function fmtHoras(h){ const m = Math.round(h*60); return `${Math.floor(m/60)}h${String(m%60).padStart(2,"0")}`; }
+function configGraficoCompilado(D, grande){
+  const labels = D.dias.map(d=> formatarDataBR(d.data).slice(0,5));
+  const fs = grande ? 24 : 11;
+  return {
+    type:"line",
+    data:{ labels, datasets:[
+      { label:"Animais no dia", data:D.dias.map(d=>d.animais), borderColor:"#1f7a3f", backgroundColor:"rgba(31,122,63,.12)", fill:true, tension:.35, pointRadius: grande?7:3, borderWidth: grande?4:2 },
+      { label:`Média (${fmtN(D.mediaDia,0)}/dia)`, data:D.dias.map(()=>Math.round(D.mediaDia)), borderColor:"#b9793f", borderDash:[10,7], pointRadius:0, fill:false, borderWidth: grande?3.5:2 }
+    ]},
+    options:{ responsive:!grande, maintainAspectRatio:false, animation:false,
+      plugins:{ legend:{ position:"bottom", labels:{ font:{size:fs} } } },
+      scales:{ y:{ beginAtZero:true, ticks:{font:{size:fs}} }, x:{ ticks:{font:{size:fs}} } } }
+  };
+}
+function renderCompilado(){
+  const D = dadosCompilado();
+  const kpi = (n,l)=>`<div class="counter-box"><div class="num">${n}</div><div class="lbl">${l}</div></div>`;
+  $("compKpis").innerHTML = kpi(fmtN(D.total),"Total de animais") + kpi(fmtN(D.dias.length),"Dias auditados")
+    + kpi(D.porHora ? fmtN(D.porHora,1) : "—","Animais/hora") + kpi(fmtN(D.mediaDia,0),"Média por dia")
+    + kpi(fmtN(D.arrobas,1),"Total @") + kpi(fmtHoras(D.horasTot),"Horas trabalhadas");
+  const linha = (a,b)=>`<div class="res-row"><span>${a}</span><strong>${b}</strong></div>`;
+  $("compRaca").innerHTML = D.racas.length ? D.racas.map(([r,n])=>linha(r, `${fmtN(n)} (${fmtN(100*n/(D.total||1),1)}%)`)).join("") : `<p class="pending">—</p>`;
+  $("compCarimbo").innerHTML = D.carimbos.length ? D.carimbos.map(([v,n])=>linha(`${fmtN(v,v%1?1:0)} @`, fmtN(n))).join("") : `<p class="pending">—</p>`;
+  $("compDias").innerHTML = D.dias.length ? D.dias.map(d=>`<tr><td>${formatarDataBR(d.data)}</td><td>${fmtN(d.animais)}</td><td>${d.horas?fmtHoras(d.horas):"—"}</td><td>${d.porHora?fmtN(d.porHora,1):"—"}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="pending">Sem lançamentos nesse filtro.</td></tr>`;
+  if(typeof Chart !== "undefined"){
+    if(chartsAdmin.chartCompilado){ chartsAdmin.chartCompilado.destroy(); chartsAdmin.chartCompilado = null; }
+    if(D.dias.length) chartsAdmin.chartCompilado = new Chart($("chartCompilado"), configGraficoCompilado(D, false));
+  }
+}
+["compDe","compAte","compRetiro"].forEach(id=> $(id).addEventListener("change", renderCompilado));
+function imagemGraficoCompilado(D){
+  return new Promise(resolve=>{
+    const W = 1400, H = 700;
+    const c = document.createElement("canvas"); c.width=W; c.height=H;
+    c.style.cssText = "position:fixed;left:-99999px;top:0;width:"+W+"px;height:"+H+"px;";
+    document.body.appendChild(c);
+    const ch = new Chart(c, configGraficoCompilado(D, true));
+    setTimeout(()=>{ const img = c.toDataURL("image/png"); ch.destroy(); c.remove(); resolve(img); }, 80);
+  });
+}
+$("btnCompiladoPDF").onclick = async ()=>{
+  const D = dadosCompilado();
+  if(!D.total){ alert("Nenhum animal nesse filtro."); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:"portrait", format:"a4" });
+  const W = 210, mx = 12;
+  const periodo = (D.de||D.ate) ? `${D.de?formatarDataBR(D.de):"início"} a ${D.ate?formatarDataBR(D.ate):"hoje"}` : (D.dias.length ? `${formatarDataBR(D.dias[0].data)} a ${formatarDataBR(D.dias[D.dias.length-1].data)}` : "—");
+  let y = adicionarLogoCabecalho(doc, "COMPILADO GERAL — AUDITORIA DE ANIMAIS", `Fazenda Jaó · ${D.ret||"Todos os retiros"} · Período: ${periodo}`);
+  // KPIs
+  const kpis = [[fmtN(D.total),"TOTAL DE ANIMAIS"],[fmtN(D.dias.length),"DIAS AUDITADOS"],[D.porHora?fmtN(D.porHora,1):"—","ANIMAIS/HORA"],[fmtN(D.mediaDia,0),"MÉDIA POR DIA"],[fmtN(D.arrobas,1),"TOTAL @"],[fmtHoras(D.horasTot),"HORAS TRABALHADAS"]];
+  const bw = (W-2*mx-5*3)/6;
+  kpis.forEach((k,i)=>{
+    const x = mx + i*(bw+3);
+    doc.setFillColor(238,247,240); doc.setDrawColor(190,220,198); doc.roundedRect(x, y, bw, 17, 2, 2, "FD");
+    doc.setFont(undefined,"bold"); doc.setFontSize(12.5); doc.setTextColor(24,80,45); doc.text(String(k[0]), x+bw/2, y+8, {align:"center"});
+    doc.setFont(undefined,"normal"); doc.setFontSize(5.8); doc.setTextColor(90,90,90); doc.text(k[1], x+bw/2, y+13.5, {align:"center"});
+  });
+  y += 22;
+  // gráfico
+  doc.setFont(undefined,"bold"); doc.setFontSize(10); doc.setTextColor(24,38,25);
+  doc.text("ANIMAIS TRABALHADOS POR DIA E MÉDIA", mx, y); y += 2;
+  if(typeof Chart !== "undefined" && D.dias.length){
+    const img = await imagemGraficoCompilado(D);
+    const gw = W-2*mx, gh = gw*700/1400;
+    doc.addImage(img, "PNG", mx, y, gw, gh); y += gh + 4;
+  }
+  // tabelas raça | carimbo | dias, lado a lado
+  const est = { theme:"grid", styles:{fontSize:7.2, cellPadding:1.3}, headStyles:{fillColor:[24,38,25], textColor:255, fontSize:7.4}, footStyles:{fillColor:[230,240,232], textColor:[24,38,25], fontStyle:"bold"} };
+  const colW = (W-2*mx-8)/3;
+  const yTab = y;
+  doc.autoTable({ ...est, startY:yTab, margin:{left:mx}, tableWidth:colW,
+    head:[["RAÇA","ANIMAIS","%"]], body:D.racas.map(([r,n])=>[r, fmtN(n), fmtN(100*n/(D.total||1),1)+"%"]), foot:[["TOTAL", fmtN(D.total), "100%"]] });
+  doc.autoTable({ ...est, startY:yTab, margin:{left:mx+colW+4}, tableWidth:colW,
+    head:[["CARIMBO","ANIMAIS","%"]], body:D.carimbos.map(([v,n])=>[`${fmtN(v,v%1?1:0)} @`, fmtN(n), fmtN(100*n/(D.total||1),1)+"%"]) });
+  // dias: se for muita data, aperta a fonte pra caber na folha
+  const espaco = 297 - yTab - 14;
+  const fsDias = Math.max(4.6, Math.min(7.2, espaco / (D.dias.length+2) / 0.55));
+  doc.autoTable({ ...est, styles:{...est.styles, fontSize:fsDias, cellPadding: fsDias<6?0.6:1.3}, startY:yTab, margin:{left:mx+2*(colW+4)}, tableWidth:colW,
+    head:[["DATA","ANIMAIS","HORAS","AN./H"]],
+    body:D.dias.map(d=>[formatarDataBR(d.data), fmtN(d.animais), d.horas?fmtHoras(d.horas):"—", d.porHora?fmtN(d.porHora,1):"—"]),
+    foot:[["TOTAL", fmtN(D.total), fmtHoras(D.horasTot), D.porHora?fmtN(D.porHora,1):"—"]] });
+  // rodapé
+  const hoje = new Date();
+  doc.setFontSize(7); doc.setTextColor(130,130,130); doc.setFont(undefined,"normal");
+  doc.text(`Animais/hora = animais ÷ horas trabalhadas (início ao término de cada controle, descontando as pausas). Gerado em ${formatarDataBR(hojeLocalISO())} ${String(hoje.getHours()).padStart(2,"0")}:${String(hoje.getMinutes()).padStart(2,"0")}.`, mx, 290);
+  // garante 1 folha
+  while(doc.internal.getNumberOfPages() > 1) doc.deletePage(doc.internal.getNumberOfPages());
+  doc.save(`Compilado_Auditoria_${(D.de||"inicio")}_${(D.ate||hojeLocalISO())}.pdf`);
+  registrarLog("Compilado gerado", `Período: ${periodo} · ${D.ret||"todos os retiros"} · ${fmtN(D.total)} animais`);
+};
 /* ---- Registro (log) das ações dos admins ----
    Cada alteração vira um documento em "logsAdmin": {quando, adminEmail, acao, detalhe}.
    As regras do Firebase só deixam admin criar e ler — ninguém edita nem apaga. */
