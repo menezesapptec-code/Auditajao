@@ -776,9 +776,11 @@ tr.editavel:hover td{background:#f4faf6;}
 <!-- MODAL: CORRIGIR HORÁRIOS DA ORDEM (admin) -->
 <div id="modalHorarios" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px;">
   <div class="card" style="max-width:460px;width:100%;max-height:90vh;overflow:auto;">
-    <h2>🕘 Corrigir horários</h2>
+    <h2>✏ Editar ordem</h2>
     <p class="sub" id="mhSub">—</p>
-    <div class="grid">
+    <label>Retiro</label><select id="mhRetiro"></select>
+    <p class="sub" id="mhRetiroAviso" style="margin-top:4px;"></p>
+    <div class="grid" style="margin-top:8px;">
       <div><label>Início</label><input type="time" id="mhInicio"></div>
       <div><label>Término</label><input type="time" id="mhTermino"></div>
     </div>
@@ -3026,7 +3028,7 @@ function renderOrdensAdmin(){
         <div style="font-weight:600;">Nº ${c.numero||"-"} — ${formatarDataBR(c.data)} <span style="font-weight:400;font-size:12px;color:var(--cinza);">· ${tipo}${c._orfao?" · ⚠ sem controle":""}</span></div>
         <div class="meta">🏠 ${c.retiro||"Sem retiro"} · 👤 ${c.criadoPorNome||"-"} · ${qtdPorControle[c.id]||0} animais${c.horaTermino?" · finalizada":""}</div>
       </div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
-        ${c._orfao?"":`<button class="btn-secondary" data-acao="horas" style="white-space:nowrap;padding:8px 12px;">🕘 Horários</button>`}
+        ${c._orfao?"":`<button class="btn-secondary" data-acao="horas" style="white-space:nowrap;padding:8px 12px;">✏ Editar</button>`}
         <button class="btn-danger" data-acao="excluir" style="white-space:nowrap;">🗑 Excluir</button></div>`;
     div.querySelector('[data-acao="excluir"]').onclick = ()=> excluirOrdemAdmin(c, qtdPorControle[c.id]||0);
     const bh = div.querySelector('[data-acao="horas"]'); if(bh) bh.onclick = ()=> abrirEditarHorarios(c);
@@ -3041,6 +3043,11 @@ function abrirEditarHorarios(c){
   ordemHorariosAtual = c;
   pausasEdit = listaPausas(c).map(p=>({...p}));
   $("mhSub").textContent = `Ordem Nº ${c.numero||"-"} · ${formatarDataBR(c.data)} · ${c.retiro||"sem retiro"} · ${c.criadoPorNome||"-"}`;
+  const lista = [...(configCache.retiros||[])];
+  if(c.retiro && !lista.some(r=> normRetiro(r)===normRetiro(c.retiro))) lista.push(c.retiro);
+  $("mhRetiro").innerHTML = `<option value="">Sem retiro</option>` + lista.map(r=>`<option value="${r}">${r}</option>`).join("");
+  $("mhRetiro").value = lista.find(r=> normRetiro(r)===normRetiro(c.retiro)) || "";
+  $("mhRetiroAviso").textContent = "";
   $("mhInicio").value = c.horaInicio||"";
   $("mhTermino").value = c.horaTermino||"";
   renderPausasEdit();
@@ -3069,6 +3076,13 @@ function atualizarResumoHorarios(){
   $("mhResumo").textContent = min>0 ? `Tempo trabalhado: ${fmtHoras(min/60)} · ${qtd} animais · ${(qtd/(min/60)).toLocaleString("pt-BR",{maximumFractionDigits:1})} animais/hora` : "Preencha início e término pra calcular o rendimento.";
 }
 ["mhInicio","mhTermino"].forEach(id=> $(id).addEventListener("input", atualizarResumoHorarios));
+$("mhRetiro").addEventListener("change", ()=>{
+  const c = ordemHorariosAtual; if(!c) return;
+  const novo = $("mhRetiro").value;
+  const qtd = adminAnimaisCache.filter(a=>a.controleId===c.id).length;
+  $("mhRetiroAviso").textContent = normRetiro(novo)!==normRetiro(c.retiro)
+    ? `⚠ A ordem e os ${qtd} animais dela passam pro retiro "${novo||"sem retiro"}" (contagens, carimbos e relatórios).` : "";
+});
 $("mhAddPausa").onclick = ()=>{ pausasEdit.push({inicio:"", fim:"", motivo:""}); renderPausasEdit(); };
 $("mhCancel").onclick = ()=>{ $("modalHorarios").classList.add("hidden"); ordemHorariosAtual = null; };
 $("mhSave").onclick = async ()=>{
@@ -3082,22 +3096,48 @@ $("mhSave").onclick = async ()=>{
     if(p.fim && p.fim <= p.inicio){ alert(`A pausa das ${p.inicio} tem a volta antes da parada.`); return; }
   }
   pausas.sort((a,b)=> a.inicio.localeCompare(b.inicio));
+  const novoRetiro = $("mhRetiro").value;
+  const mudouRetiro = normRetiro(novoRetiro) !== normRetiro(c.retiro);
   const dados = { horaInicio: ini, horaTermino: fim, pausas };
+  if(mudouRetiro) dados.retiro = novoRetiro;
   const antes = `${c.horaInicio||"--:--"} → ${c.horaTermino||"--:--"}; pausas: ${textoPausas(c)||"nenhuma"}`;
   const depois = `${ini} → ${fim||"--:--"}; pausas: ${textoPausas(dados)||"nenhuma"}`;
+  if(mudouRetiro && !confirm(`Trocar o retiro da ordem Nº ${c.numero||"-"} de "${c.retiro||"sem retiro"}" para "${novoRetiro||"sem retiro"}"?\nTodos os animais dela vão junto.`)) return;
   try{
+    $("mhSave").disabled = true;
     await db.collection("controles").doc(c.id).set(dados, {merge:true});
+    let nAnim = 0;
+    if(mudouRetiro){
+      // leva os animais da ordem pro novo retiro (em lotes)
+      const snap = await db.collection("animais").where("controleId","==",c.id).get();
+      for(let i=0; i<snap.docs.length; i+=400){
+        const batch = db.batch();
+        snap.docs.slice(i,i+400).forEach(d=> batch.update(d.ref, { retiro: novoRetiro }));
+        await batch.commit();
+      }
+      nAnim = snap.size;
+      adminAnimaisCache.forEach(a=>{ if(a.controleId===c.id){ a.retiro = novoRetiro; a._retiro = novoRetiro || "Sem retiro"; } });
+    }
+    const retiroAntigo = c.retiro;
     Object.assign(c, dados);
     const cc = adminControlesCache.find(x=>x.id===c.id); if(cc) Object.assign(cc, dados);
-    registrarLog("Horários da ordem corrigidos", `Nº ${c.numero||"-"} · ${formatarDataBR(c.data)} · ${c.retiro||"—"}\nAntes: ${antes}\nDepois: ${depois}`);
+    registrarLog(mudouRetiro ? "Ordem editada (retiro e horários)" : "Horários da ordem corrigidos",
+      `Nº ${c.numero||"-"} · ${formatarDataBR(c.data)}`
+      + (mudouRetiro ? `\nRetiro: "${retiroAntigo||"—"}" → "${novoRetiro||"—"}" (${nAnim} animais)` : ` · ${c.retiro||"—"}`)
+      + `\nHorários antes: ${antes}\nHorários depois: ${depois}`);
+    if(mudouRetiro){
+      adminRetirosSelecionados.add(novoRetiro || "Sem retiro");
+      renderRetiroChecklist([...new Set(adminAnimaisCache.map(a=>a._retiro))].sort((x,y)=>x.localeCompare(y,"pt-BR")));
+      aplicarFiltrosAdmin();
+    }
     $("modalHorarios").classList.add("hidden");
     renderOrdensAdmin();
     if(!$("adminMonitoramentoView").classList.contains("hidden")) renderMonitoramento();
-    toastRapido("🕘 Horários atualizados.");
+    toastRapido(mudouRetiro ? "✏ Ordem atualizada (retiro e horários)." : "🕘 Horários atualizados.");
   }catch(e){
     console.error(e);
     alert("Erro ao salvar: " + (e.code==="permission-denied" ? "sem permissão nas regras do Firebase." : (e.message||e)));
-  }
+  }finally{ $("mhSave").disabled = false; }
 };
 $("ordensData").addEventListener("change", renderOrdensAdmin);
 async function excluirOrdemAdmin(c, qtd){
