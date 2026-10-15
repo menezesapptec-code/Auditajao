@@ -446,6 +446,7 @@ tr.editavel:hover td{background:#f4faf6;}
         <div class="counter-box"><div class="num" id="aPendente">0</div><div class="lbl">Aguard. soltura</div></div>
         <div class="counter-box"><div class="num" id="aArrobas">0</div><div class="lbl">Total @</div></div>
         <div class="counter-box"><div class="num" id="aLotes">0</div><div class="lbl">Lotes soltos</div></div>
+        <div class="counter-box"><div class="num" id="aPesoMedio">—</div><div class="lbl" id="aPesoMedioLbl">Peso médio (kg)</div></div>
       </div>
     </div>
 
@@ -763,6 +764,7 @@ tr.editavel:hover td{background:#f4faf6;}
     <div class="grid">
       <div><label>Raça</label><select id="erRaca"></select></div>
       <div><label>Categoria</label><select id="erCategoria"></select></div>
+      <div><label>Peso (kg) — opcional</label><input type="number" step="0.1" inputmode="decimal" id="erPeso"></div>
       <div><label>Carimbo (@)</label><input type="number" step="0.1" inputmode="decimal" id="erCarimbo"></div>
       <div class="full"><label>Obs.</label><input id="erObs" placeholder="Opcional"></div>
     </div>
@@ -812,6 +814,7 @@ tr.editavel:hover td{background:#f4faf6;}
       </div>
       <div><label>Curral / pasto do destino</label><input id="aeDestinoDetalhe"></div>
       <div><label>Pasto</label><input id="aePasto"></div>
+      <div><label>Peso (kg)</label><input type="number" step="0.1" id="aePeso"></div>
       <div><label>Carimbo (@)</label><input type="number" step="0.1" id="aeCarimbo"></div>
       <div class="full"><label>Obs.</label><input id="aeObs"></div>
     </div>
@@ -1771,6 +1774,28 @@ function destinoComDetalhe(a){
   return a.destinoDetalhe ? `${a.destino} — ${a.destinoDetalhe}` : a.destino;
 }
 
+/* Peso (kg) é opcional; a média só considera quem tem peso informado */
+function pesoMedio(lista){
+  const com = lista.filter(a=> a.tipoAuditoria!=="confinamento" && (parseFloat(a.peso)||0) > 0);
+  return com.length ? { media: com.reduce((t,a)=>t+parseFloat(a.peso),0)/com.length, n: com.length } : { media:0, n:0 };
+}
+/* @ calculada pelo peso vivo: peso ÷ 30 (ex.: 300 kg = 10 @), arredondada pro inteiro mais próximo */
+const KG_POR_ARROBA_VIVO = 30;
+function arrobaDoPeso(peso){
+  const p = parseFloat(String(peso||"").replace(",", "."));
+  return p>0 ? Math.round(p / KG_POR_ARROBA_VIVO) : 0;
+}
+function atualizarInfoCarimbo(){
+  const el = $("carimboAutoInfo"); if(!el) return;
+  const auto = arrobaDoPeso(wizData.peso);
+  if(!auto) el.textContent = "Com o peso preenchido, a @ é calculada sozinha (peso ÷ 30). Dá pra digitar outra por cima.";
+  else if(wizData.carimboManual && String(parseFloat(wizData.carimbo)) !== String(auto)) el.innerHTML = `✍ @ digitada na mão (pelo peso daria ${auto} @). <a href="#" id="usarAutoCarimbo">Usar ${auto} @</a>`;
+  else el.textContent = `⚖ ${String(wizData.peso).replace(".", ",")} kg ÷ 30 = ${auto} @ (calculado automático)`;
+  const lk = $("usarAutoCarimbo");
+  if(lk) lk.onclick = (ev)=>{ ev.preventDefault(); wizData.carimboManual = false; wizData.carimbo = String(auto); $("inCarimbo").value = wizData.carimbo; atualizarInfoCarimbo(); $("inCarimbo").focus(); };
+}
+function txtPeso(a){ const p = parseFloat(a && a.peso); return p>0 ? `${p.toLocaleString("pt-BR",{maximumFractionDigits:1})} kg` : ""; }
+
 /* ================= CARIMBOS (animais agrupados por @) ================= */
 let carimbosAnimaisCache = [];
 async function abrirCarimbos(){
@@ -2156,7 +2181,7 @@ let wizErr = "";
 
 function novoWizardAnimal(){
   wizIdx = 0;
-  wizData = { raca:"", racaOutro:false, categoria:"", origem:"", destino:"", destinoOutro:false, carimbo:"", obs:"" };
+  wizData = { raca:"", racaOutro:false, categoria:"", origem:"", destino:"", destinoOutro:false, peso:"", carimbo:"", carimboManual:false, obs:"" };
   wizErr = "";
 }
 $("btnAbrirWizardAnimal").onclick = ()=>{
@@ -2183,6 +2208,8 @@ function validarWizStep(key){
   if(key==="categoria") return wizData.categoria ? null : "Selecione a categoria.";
   if(key==="destino") return wizData.destino ? null : "Selecione o destino.";
   if(key==="carimbo"){
+    const pTxt = String(wizData.peso||"").trim();
+    if(pTxt && !(parseFloat(pTxt.replace(",", "."))>0)) return "Peso inválido — corrija ou deixe em branco.";
     const v = parseFloat(wizData.carimbo);
     return (v>0) ? null : "Informe o valor do Carimbo (@).";
   }
@@ -2216,7 +2243,7 @@ function renderPainelLateralWiz(){
     const div = document.createElement("div");
     div.className = "hist-item" + (ed ? "" : " lock");
     div.innerHTML = `<div class="t">Ord. ${a.ord} · ${a.carimbo} @ ${ed?"<span style='float:right;color:var(--verde);'>✎</span>":"<span style='float:right;'>🔒</span>"}</div>
-      <div class="m">${a.raca||"-"} · ${a.categoria||"-"}${a.obs?` · ${a.obs}`:""}</div>`;
+      <div class="m">${a.raca||"-"} · ${a.categoria||"-"}${txtPeso(a)?` · ${txtPeso(a)}`:""}${a.obs?` · ${a.obs}`:""}</div>`;
     div.onclick = ()=> abrirEdicaoRapida(a.id);
     wrap.appendChild(div);
   });
@@ -2229,6 +2256,7 @@ function renderPainelLateralWiz(){
   const linhasRaca = contagemPorRaca(lista).map(([r,n])=>`<div class="res-row"><span>${r}</span><strong>${n}</strong></div>`).join("");
   $("wizResumo").innerHTML = lista.length ? `
     <div class="res-row" style="font-size:14px;"><span>Total de animais</span><strong>${lista.length}</strong></div>
+    ${pesoMedio(lista).n ? `<div class="res-row"><span>Peso médio (${pesoMedio(lista).n} pesados)</span><strong>${fmtN(pesoMedio(lista).media,1)} kg</strong></div>` : ""}
     <div class="chip-lbl" style="font-size:12px;font-weight:700;color:var(--verde);margin:10px 0 2px;">Por carimbo</div>${linhasCar}
     <div class="chip-lbl" style="font-size:12px;font-weight:700;color:var(--verde);margin:10px 0 2px;">Por raça</div>${linhasRaca}`
     : `<p class="pending">Sem lançamentos ainda.</p>`;
@@ -2252,17 +2280,25 @@ function abrirEdicaoRapida(id){
   $("erCategoria").innerHTML = cats.map(c=>`<option value="${c}">${c}</option>`).join("");
   $("erCategoria").value = a.categoria||"";
   $("erCarimbo").value = a.carimbo;
+  $("erPeso").value = parseFloat(a.peso)>0 ? a.peso : "";
+  $("erCarimbo").dataset.manual = "";
   $("erObs").value = a.obs||"";
   $("modalEdicaoRapida").classList.remove("hidden");
   setTimeout(()=>{ const el=$("erCarimbo"); el.focus(); el.select(); }, 30);
 }
 function fecharEdicaoRapida(){ $("modalEdicaoRapida").classList.add("hidden"); animalEdicaoRapida = null; }
 $("erCancel").onclick = fecharEdicaoRapida;
+$("erCarimbo").addEventListener("input", ()=> $("erCarimbo").dataset.manual = "1");
+$("erPeso").addEventListener("input", ()=>{
+  const auto = arrobaDoPeso($("erPeso").value);
+  if(auto && !$("erCarimbo").dataset.manual) $("erCarimbo").value = auto;
+});
 $("erSave").onclick = ()=>{
   const a = animalEdicaoRapida; if(!a) return;
   const carimbo = parseFloat(String($("erCarimbo").value).replace(",", "."));
   if(!carimbo || carimbo<=0){ alert("Informe um carimbo (@) válido."); return; }
-  const dados = { raca:$("erRaca").value, categoria:$("erCategoria").value, carimbo, obs:$("erObs").value.trim() };
+  const pesoER = parseFloat(String($("erPeso").value).replace(",", "."));
+  const dados = { raca:$("erRaca").value, categoria:$("erCategoria").value, carimbo, peso: pesoER>0 ? pesoER : null, obs:$("erObs").value.trim() };
   Object.assign(a, dados);
   localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
   filaOffline.push({tipo:"updAnimal", id:a.id, dados});
@@ -2323,8 +2359,12 @@ function renderWizStep(key){
       </div>`;
   }
   if(key==="carimbo"){
-    return `<h2>Carimbo (@)</h2><p class="sub">Valor em arrobas.</p>${errHtml}
-      <input type="number" step="0.1" inputmode="decimal" class="big-input" id="inCarimbo" placeholder="Ex: 10" value="${wizData.carimbo||""}">`;
+    return `<h2>Peso e Carimbo (@)</h2>${errHtml}
+      <label>Peso (kg) <span style="font-weight:400;color:var(--cinza);">— opcional</span></label>
+      <input type="number" step="0.1" inputmode="decimal" id="inPeso" placeholder="Ex: 450 (Enter pula)" value="${wizData.peso||""}" style="margin-bottom:12px;">
+      <label>Carimbo (@) <span style="font-weight:400;color:#a9382f;">— obrigatório</span></label>
+      <input type="number" step="0.1" inputmode="decimal" class="big-input" id="inCarimbo" placeholder="Ex: 10" value="${wizData.carimbo||""}">
+      <p class="sub" id="carimboAutoInfo" style="margin-top:6px;">Com o peso preenchido, a @ é calculada sozinha (peso ÷ 30). Dá pra digitar outra por cima.</p>`;
   }
   if(key==="obs"){
     return `<h2>Observações</h2><p class="sub">Opcional.</p>${errHtml}
@@ -2338,6 +2378,7 @@ function renderWizStep(key){
       {k:"Ordem (do dia)", v: ordAtual, jump:null},
       {k:"Raça", v: wizData.raca||"—", jump:"raca"},
       {k:"Categoria", v: wizData.categoria||"—", jump:"categoria"},
+      {k:"Peso", v: parseFloat(wizData.peso)>0 ? wizData.peso+" kg" : "—", jump:"carimbo"},
       {k:"Carimbo", v: wizData.carimbo?wizData.carimbo+" @":"—", jump:"carimbo"},
       {k:"Obs", v: wizData.obs||"—", jump:"obs"}
     ];
@@ -2389,8 +2430,23 @@ function bindWizStep(key){
     if(inOutroD) inOutroD.oninput = e=> wizData.destino = e.target.value;
   }
   if(key==="carimbo"){
-    $("inCarimbo").oninput = e=> wizData.carimbo = e.target.value;
-    setTimeout(()=>{ const el=$("inCarimbo"); if(el) el.focus(); }, 30);
+    $("inCarimbo").oninput = e=>{ wizData.carimbo = e.target.value; wizData.carimboManual = e.target.value !== ""; atualizarInfoCarimbo(); };
+    $("inPeso").oninput = e=>{
+      wizData.peso = e.target.value;
+      // calcula a @ pelo peso, a não ser que a auditora já tenha digitado a @ na mão
+      const auto = arrobaDoPeso(e.target.value);
+      if(!wizData.carimboManual){
+        wizData.carimbo = auto ? String(auto) : "";
+        $("inCarimbo").value = wizData.carimbo;
+      }
+      atualizarInfoCarimbo();
+    };
+    atualizarInfoCarimbo();
+    // Enter no peso vai pro carimbo (não avança a etapa); Enter no carimbo avança
+    $("inPeso").addEventListener("keydown", e=>{
+      if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); const c=$("inCarimbo"); c.focus(); c.select(); }
+    });
+    setTimeout(()=>{ const el=$("inPeso"); if(el){ el.focus(); el.select(); } }, 30);
   }
   if(key==="obs"){
     $("inObsWiz").oninput = e=> wizData.obs = e.target.value;
@@ -2450,6 +2506,7 @@ function confirmarESalvarAnimal(){
     id: uid(), controleId: servicoAtual.id, controleNumero: servicoAtual.numero||servicoAtual.id, ord,
     data: servicoAtual.data, retiro: servicoAtual.retiro||"", tipoAuditoria: tipoAuditoriaAtual, raca: wizData.raca, categoria: wizData.categoria,
     origem: servicoAtual.origem||"", destino: "", pasto: "", carimbo, // origem vem do controle; destino na aba Carimbos
+    peso: parseFloat(String(wizData.peso||"").replace(",", "."))>0 ? parseFloat(String(wizData.peso).replace(",", ".")) : null,
     obs: (wizData.obs||"").trim(), status:"pendente", loteId:null, conferente1:null, conferente2:null, confAt:null,
     criadoPor: currentUser.uid, criadoPorNome: currentAuditorNome || currentUser.email,
     criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoEmLocal: Date.now()
@@ -2564,9 +2621,9 @@ $("btnExportExcel").onclick = ()=>{
     ["Total Animais", $("cTotal").textContent], ["Total @ (Carimbo)", $("cArrobas").textContent],
     ["Animais/Hora", $("cAnimaisHora").textContent], ["Confinamento", $("cConf").textContent],
     ["Recria", $("cRecria").textContent], ["Refugo", $("cRefugo").textContent], ["Outros", $("cOutro").textContent],
-    [], ["ORD.","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","CARIMBO (@)","STATUS","OBS."]
+    [], ["ORD.","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","PESO (KG)","CARIMBO (@)","STATUS","OBS."]
   ];
-  animaisAtual.forEach(a=> cab.push([a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,a.status,a.obs]));
+  animaisAtual.forEach(a=> cab.push([a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",parseFloat(a.peso)>0?a.peso:"",a.carimbo,a.status,a.obs]));
   const ws = XLSX.utils.aoa_to_sheet(cab);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Controle");
   XLSX.writeFile(wb, nomeArquivo("xlsx"));
@@ -2589,6 +2646,7 @@ $("btnExportPDF").onclick = async ()=>{
       ["Hora término", s.horaTermino||"—"],
       ["Pasto", s.pasto||"—"],
       ["Total de animais", String(totalAnimais)], ["Total @ (carimbo)", somaArrobas().toFixed(1)],
+      ["Peso médio", pesoMedio(animaisAtual).n ? `${fmtN(pesoMedio(animaisAtual).media,1)} kg (${pesoMedio(animaisAtual).n} pesados)` : "—"],
       ["Animais/hora", $("cAnimaisHora").textContent],
       ["Confinamento", $("cConf").textContent], ["Recria", $("cRecria").textContent],
       ["Refugo", $("cRefugo").textContent], ["Outros destinos", $("cOutro").textContent],
@@ -2855,7 +2913,8 @@ function dadosCompilado(){
   const horasTot = dias.reduce((t,d)=>t+d.horas,0);
   const animComHoraTot = dias.reduce((t,d)=>t+d.animaisComHora,0);
   const mediaDia = dias.length ? total/dias.length : 0;
-  return { lista, total, arrobas, racas, carimbos, dias, horasTot, porHora: horasTot>0 ? animComHoraTot/horasTot : 0, mediaDia, de, ate, ret };
+  const pm = pesoMedio(lista);
+  return { lista, total, arrobas, pesoMed: pm.media, pesados: pm.n, racas, carimbos, dias, horasTot, porHora: horasTot>0 ? animComHoraTot/horasTot : 0, mediaDia, de, ate, ret };
 }
 const fmtN = (v,d=0)=> Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:d, maximumFractionDigits:d});
 function fmtHoras(h){ const m = Math.round(h*60); return `${Math.floor(m/60)}h${String(m%60).padStart(2,"0")}`; }
@@ -2878,7 +2937,8 @@ function renderCompilado(){
   const kpi = (n,l)=>`<div class="counter-box"><div class="num">${n}</div><div class="lbl">${l}</div></div>`;
   $("compKpis").innerHTML = kpi(fmtN(D.total),"Total de animais") + kpi(fmtN(D.dias.length),"Dias auditados")
     + kpi(D.porHora ? fmtN(D.porHora,1) : "—","Animais/hora") + kpi(fmtN(D.mediaDia,0),"Média por dia")
-    + kpi(fmtN(D.arrobas,1),"Total @") + kpi(fmtHoras(D.horasTot),"Horas trabalhadas");
+    + kpi(fmtN(D.arrobas,1),"Total @") + kpi(fmtHoras(D.horasTot),"Horas trabalhadas")
+    + kpi(D.pesados ? fmtN(D.pesoMed,1)+" kg" : "—", D.pesados ? `Peso médio (${fmtN(D.pesados)} pesados)` : "Peso médio");
   const linha = (a,b)=>`<div class="res-row"><span>${a}</span><strong>${b}</strong></div>`;
   $("compRaca").innerHTML = D.racas.length ? D.racas.map(([r,n])=>linha(r, `${fmtN(n)} (${fmtN(100*n/(D.total||1),1)}%)`)).join("") : `<p class="pending">—</p>`;
   $("compCarimbo").innerHTML = D.carimbos.length ? D.carimbos.map(([v,n])=>linha(`${fmtN(v,v%1?1:0)} @`, fmtN(n))).join("") : `<p class="pending">—</p>`;
@@ -2909,8 +2969,8 @@ $("btnCompiladoPDF").onclick = async ()=>{
   const periodo = (D.de||D.ate) ? `${D.de?formatarDataBR(D.de):"início"} a ${D.ate?formatarDataBR(D.ate):"hoje"}` : (D.dias.length ? `${formatarDataBR(D.dias[0].data)} a ${formatarDataBR(D.dias[D.dias.length-1].data)}` : "—");
   let y = adicionarLogoCabecalho(doc, "COMPILADO GERAL — AUDITORIA DE ANIMAIS", `Fazenda Jaó · ${D.ret||"Todos os retiros"} · Período: ${periodo}`);
   // KPIs
-  const kpis = [[fmtN(D.total),"TOTAL DE ANIMAIS"],[fmtN(D.dias.length),"DIAS AUDITADOS"],[D.porHora?fmtN(D.porHora,1):"—","ANIMAIS/HORA"],[fmtN(D.mediaDia,0),"MÉDIA POR DIA"],[fmtN(D.arrobas,1),"TOTAL @"],[fmtHoras(D.horasTot),"HORAS TRABALHADAS"]];
-  const bw = (W-2*mx-5*3)/6;
+  const kpis = [[fmtN(D.total),"TOTAL DE ANIMAIS"],[fmtN(D.dias.length),"DIAS AUDITADOS"],[D.porHora?fmtN(D.porHora,1):"—","ANIMAIS/HORA"],[fmtN(D.mediaDia,0),"MÉDIA POR DIA"],[fmtN(D.arrobas,1),"TOTAL @"],[fmtHoras(D.horasTot),"HORAS TRAB."],[D.pesados?fmtN(D.pesoMed,1)+" kg":"—","PESO MÉDIO"]];
+  const bw = (W-2*mx-(kpis.length-1)*3)/kpis.length;
   kpis.forEach((k,i)=>{
     const x = mx + i*(bw+3);
     doc.setFillColor(238,247,240); doc.setDrawColor(190,220,198); doc.roundedRect(x, y, bw, 17, 2, 2, "FD");
@@ -3269,6 +3329,9 @@ function aplicarFiltrosAdmin(){
   const arrobas = lista.reduce((t,a)=>t+(parseFloat(a.carimbo)||0),0);
   const lotes = new Set(lista.filter(a=>a.loteId).map(a=>a.loteId)).size;
   $("aTotal").textContent=total; $("aPendente").textContent=pend; $("aArrobas").textContent=arrobas.toFixed(1); $("aLotes").textContent=lotes;
+  const pm = pesoMedio(lista);
+  $("aPesoMedio").textContent = pm.n ? fmtN(pm.media,1) : "—";
+  $("aPesoMedioLbl").textContent = pm.n ? `Peso médio (kg) · ${pm.n} pesados` : "Peso médio (kg)";
   desenharGraficosAdmin(lista);
 }
 $("adminDataDe").addEventListener("change", aplicarFiltrosAdmin);
@@ -3491,8 +3554,8 @@ function descricaoLocalLancamento(a){
 }
 $("btnAdminExportExcel").onclick = ()=>{
   const lista = listaOrdenadaComIndiceGeral();
-  const cab = [["Nº GERAL","DATA","CONTROLE","TIPO","ORD. (DO DIA)","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","CARIMBO (@)","LOCAL","STATUS","AUDITOR","OBS."]];
-  lista.forEach(a=> cab.push([a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,descricaoLocalLancamento(a),a.status,a.criadoPorNome,a.obs]));
+  const cab = [["Nº GERAL","DATA","CONTROLE","TIPO","ORD. (DO DIA)","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","PESO (KG)","CARIMBO (@)","LOCAL","STATUS","AUDITOR","OBS."]];
+  lista.forEach(a=> cab.push([a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",parseFloat(a.peso)>0?a.peso:"",a.carimbo,descricaoLocalLancamento(a),a.status,a.criadoPorNome,a.obs]));
   const ws = XLSX.utils.aoa_to_sheet(cab); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Todos"); XLSX.writeFile(wb, "Controle_Servico_Geral.xlsx");
 };
@@ -3824,8 +3887,8 @@ async function gerarRelatorioPDFCompleto(lista, opts){
   doc.setFontSize(14); doc.setTextColor(0,0,0); doc.setFont(undefined,"bold");
   doc.text(opts.titulo, 14, 15);
   doc.setFont(undefined,"normal");
-  doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Ord.","Tipo","Raça","Categoria","Origem","Destino","Pasto","@","Local","Status","Auditor","Obs."]],
-    body: lista.map(a=>[a.indiceGeral,formatarDataBR(a.data),a.controleNumero,a.ord,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome||"",a.obs||""]), styles:{fontSize:6.5} });
+  doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Ord.","Tipo","Raça","Categoria","Origem","Destino","Pasto","Peso","@","Local","Status","Auditor","Obs."]],
+    body: lista.map(a=>[a.indiceGeral,formatarDataBR(a.data),a.controleNumero,a.ord,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",parseFloat(a.peso)>0?a.peso:"",a.carimbo,descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome||"",a.obs||""]), styles:{fontSize:6.3} });
   doc.save(opts.arquivo);
 }
 
@@ -3852,16 +3915,17 @@ function abrirAdminEdit(a){
   $("aeCategoria").value=a.categoria||"";
   $("aeDestino").innerHTML = DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
   $("aeDestino").value=a.destino;
+  $("aePeso").value = parseFloat(a.peso)>0 ? a.peso : "";
   $("aeCarimbo").value=a.carimbo; $("aeObs").value=a.obs||""; $("aePasto").value=a.pasto||""; $("aeDestinoDetalhe").value=a.destinoDetalhe||"";
   $("modalAdminEdit").classList.remove("hidden");
 }
 $("aeCancel").onclick = ()=> $("modalAdminEdit").classList.add("hidden");
 $("aeSave").onclick = async ()=>{
   if(!animalEditandoAdmin) return;
-  const dados = { raca:$("aeRaca").value, categoria:$("aeCategoria").value, origem:$("aeOrigem").value.trim(), destino:$("aeDestino").value, pasto:$("aePasto").value.trim(), destinoDetalhe:$("aeDestinoDetalhe").value.trim(), carimbo:parseFloat($("aeCarimbo").value)||0, obs:$("aeObs").value.trim() };
+  const dados = { raca:$("aeRaca").value, categoria:$("aeCategoria").value, origem:$("aeOrigem").value.trim(), destino:$("aeDestino").value, pasto:$("aePasto").value.trim(), destinoDetalhe:$("aeDestinoDetalhe").value.trim(), carimbo:parseFloat($("aeCarimbo").value)||0, peso: parseFloat($("aePeso").value)>0 ? parseFloat($("aePeso").value) : null, obs:$("aeObs").value.trim() };
   try{
     await db.collection("animais").doc(animalEditandoAdmin.id).update(dados);
-    const antes = animalEditandoAdmin, rot = {raca:"Raça",categoria:"Categoria",origem:"Origem",destino:"Destino",pasto:"Pasto",destinoDetalhe:"Curral/pasto destino",carimbo:"Carimbo",obs:"Obs"};
+    const antes = animalEditandoAdmin, rot = {peso:"Peso",raca:"Raça",categoria:"Categoria",origem:"Origem",destino:"Destino",pasto:"Pasto",destinoDetalhe:"Curral/pasto destino",carimbo:"Carimbo",obs:"Obs"};
     const mudancas = Object.keys(dados).filter(k=> String(antes[k]??"") !== String(dados[k]??"")).map(k=>`${rot[k]||k}: "${antes[k]??""}" → "${dados[k]}"`);
     registrarLog("Lançamento editado", `Controle ${antes.controleNumero||"-"} · Ord. ${antes.ord} · ${formatarDataBR(antes.data)}\n` + (mudancas.join("\n") || "(sem mudança)"));
     $("modalAdminEdit").classList.add("hidden");
