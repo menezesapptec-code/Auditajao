@@ -421,6 +421,7 @@ tr.editavel:hover td{background:#f4faf6;}
       <button class="btn-secondary sub-tab" id="atab-ordens">🗂 Ordens</button>
       <button class="btn-secondary sub-tab" id="atab-registro">📝 Registro</button>
       <button class="btn-secondary sub-tab" id="atab-compilado">📄 Compilado</button>
+      <button class="btn-secondary sub-tab" id="atab-destinos">🎯 Destinos</button>
     </div>
   </div>
 
@@ -531,6 +532,25 @@ tr.editavel:hover td{background:#f4faf6;}
     <div class="card">
       <h2>Rendimento semanal (últimas 8 semanas)</h2>
       <div class="chart-box"><canvas id="chartRendimentoSemanal"></canvas></div>
+    </div>
+  </div>
+
+  <div id="adminDestinosView" class="hidden">
+    <div class="card">
+      <h2>Editar destino por lote</h2>
+      <p class="sub">Mesmo esquema da aba Carimbos do auditor, mas aqui o admin pode lançar ou <strong>trocar</strong> o destino de qualquer lote, inclusive os já travados. Toque num lote, marque as raças e escolha o destino.</p>
+      <div class="grid">
+        <div><label>Data</label><input type="date" id="adDestData"></div>
+        <div><label>Retiro</label><select id="adDestRetiro"></select></div>
+        <div><label>Nº da ordem (opcional)</label><input id="adDestNumero" placeholder="Todas"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="table-wrap"><table>
+        <thead><tr><th>Carimbo</th><th>Retiro</th><th>Animais</th><th>Destino atual</th></tr></thead>
+        <tbody id="adDestTabela"></tbody>
+      </table></div>
+      <p id="adDestVazio" class="pending hidden">Nenhum animal nesse filtro.</p>
     </div>
   </div>
 
@@ -771,6 +791,23 @@ tr.editavel:hover td{background:#f4faf6;}
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn-secondary" id="erCancel">Cancelar</button>
       <button class="btn-primary" id="erSave">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DESTINO POR LOTE (admin) -->
+<div id="modalAdDestino" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div class="card" style="max-width:440px;width:100%;max-height:90vh;overflow:auto;">
+    <h2 id="adlTitulo">Lote</h2>
+    <p class="sub" id="adlSub">—</p>
+    <label>Raças</label>
+    <div id="adlRacas" class="chip-row" style="margin-top:4px;"></div>
+    <label style="margin-top:12px;">Destino</label><select id="adlDestino"></select>
+    <input id="adlDestinoOutro" class="hidden" placeholder="Qual destino?" style="margin-top:6px;">
+    <div id="adlDetalheWrap" class="hidden" style="margin-top:10px;"><label id="adlDetalheLbl">Detalhe</label><input id="adlDetalhe"></div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn-secondary" id="adlCancel">Fechar</button>
+      <button class="btn-primary" id="adlSave">Aplicar</button>
     </div>
   </div>
 </div>
@@ -1779,18 +1816,36 @@ function pesoMedio(lista){
   const com = lista.filter(a=> a.tipoAuditoria!=="confinamento" && (parseFloat(a.peso)||0) > 0);
   return com.length ? { media: com.reduce((t,a)=>t+parseFloat(a.peso),0)/com.length, n: com.length } : { media:0, n:0 };
 }
-/* @ calculada pelo peso vivo: peso ÷ 30 (ex.: 300 kg = 10 @), arredondada pro inteiro mais próximo */
-const KG_POR_ARROBA_VIVO = 30;
+/* @ pela tabela de faixas de peso da fazenda:
+   até 179 kg = 5 @ · 180–209 = 6 · 210–239 = 7 · 240–269 = 8 · 270–299 = 9
+   300–329 = 10 · 330–359 = 11 · 360–389 = 12 · 390–420 = 13
+   acima de 420 kg segue a mesma regra de 30 em 30 kg (421–449 = 14, 450–479 = 15...) */
+const FAIXAS_ARROBA = [
+  { ate:179.999, arroba:5 }, { ate:209.999, arroba:6 }, { ate:239.999, arroba:7 },
+  { ate:269.999, arroba:8 }, { ate:299.999, arroba:9 }, { ate:329.999, arroba:10 },
+  { ate:359.999, arroba:11 }, { ate:389.999, arroba:12 }, { ate:420, arroba:13 }
+];
 function arrobaDoPeso(peso){
   const p = parseFloat(String(peso||"").replace(",", "."));
-  return p>0 ? Math.round(p / KG_POR_ARROBA_VIVO) : 0;
+  if(!(p>0)) return 0;
+  const f = FAIXAS_ARROBA.find(f=> p <= f.ate);
+  if(f) return f.arroba;
+  return Math.max(14, Math.floor(p / 30)); // acima de 420 kg
+}
+function faixaDoPeso(peso){
+  const p = parseFloat(String(peso||"").replace(",", "."));
+  const a = arrobaDoPeso(p);
+  if(a===5) return "até 179 kg";
+  if(a===13) return "390–420 kg";
+  if(a>=14) return "acima de 420 kg";
+  return `${a*30}–${a*30+29} kg`;
 }
 function atualizarInfoCarimbo(){
   const el = $("carimboAutoInfo"); if(!el) return;
   const auto = arrobaDoPeso(wizData.peso);
-  if(!auto) el.textContent = "Com o peso preenchido, a @ é calculada sozinha (peso ÷ 30). Dá pra digitar outra por cima.";
+  if(!auto) el.textContent = "Com o peso preenchido, a @ sai sozinha pela tabela de faixas. Dá pra digitar outra por cima.";
   else if(wizData.carimboManual && String(parseFloat(wizData.carimbo)) !== String(auto)) el.innerHTML = `✍ @ digitada na mão (pelo peso daria ${auto} @). <a href="#" id="usarAutoCarimbo">Usar ${auto} @</a>`;
-  else el.textContent = `⚖ ${String(wizData.peso).replace(".", ",")} kg ÷ 30 = ${auto} @ (calculado automático)`;
+  else el.textContent = `⚖ ${String(wizData.peso).replace(".", ",")} kg → faixa ${faixaDoPeso(wizData.peso)} = ${auto} @ (automático)`;
   const lk = $("usarAutoCarimbo");
   if(lk) lk.onclick = (ev)=>{ ev.preventDefault(); wizData.carimboManual = false; wizData.carimbo = String(auto); $("inCarimbo").value = wizData.carimbo; atualizarInfoCarimbo(); $("inCarimbo").focus(); };
 }
@@ -2364,7 +2419,7 @@ function renderWizStep(key){
       <input type="number" step="0.1" inputmode="decimal" id="inPeso" placeholder="Ex: 450 (Enter pula)" value="${wizData.peso||""}" style="margin-bottom:12px;">
       <label>Carimbo (@) <span style="font-weight:400;color:#a9382f;">— obrigatório</span></label>
       <input type="number" step="0.1" inputmode="decimal" class="big-input" id="inCarimbo" placeholder="Ex: 10" value="${wizData.carimbo||""}">
-      <p class="sub" id="carimboAutoInfo" style="margin-top:6px;">Com o peso preenchido, a @ é calculada sozinha (peso ÷ 30). Dá pra digitar outra por cima.</p>`;
+      <p class="sub" id="carimboAutoInfo" style="margin-top:6px;">Com o peso preenchido, a @ sai sozinha pela tabela de faixas. Dá pra digitar outra por cima.</p>`;
   }
   if(key==="obs"){
     return `<h2>Observações</h2><p class="sub">Opcional.</p>${errHtml}
@@ -2856,7 +2911,7 @@ $("medSave").onclick = async ()=>{
 };
 
 /* ================= ADMIN ================= */
-const ADMIN_ABAS = { visao:"adminVisaoView", monitoramento:"adminMonitoramentoView", auditores:"adminAuditoresView", retiros:"adminRetirosView", ordens:"adminOrdensView", registro:"adminRegistroView", compilado:"adminCompiladoView" };
+const ADMIN_ABAS = { visao:"adminVisaoView", monitoramento:"adminMonitoramentoView", auditores:"adminAuditoresView", retiros:"adminRetirosView", ordens:"adminOrdensView", registro:"adminRegistroView", compilado:"adminCompiladoView", destinos:"adminDestinosView" };
 function abrirAbaAdmin(aba){
   Object.entries(ADMIN_ABAS).forEach(([k,view])=>{
     $("atab-"+k).classList.toggle("active", k===aba);
@@ -2868,7 +2923,100 @@ function abrirAbaAdmin(aba){
   if(aba==="ordens") renderOrdensAdmin();
   if(aba==="registro") carregarRegistro(true);
   if(aba==="compilado") abrirCompilado();
+  if(aba==="destinos") abrirAdminDestinos();
 }
+/* ================= ADMIN: DESTINO POR LOTE (carimbo + retiro, por raça) ================= */
+let adDestGrupos = [], adLoteAtual = null;
+function abrirAdminDestinos(){
+  if(!$("adDestData").dataset.init){ $("adDestData").value = hojeLocalISO(); $("adDestData").dataset.init = "1"; }
+  const sel = $("adDestRetiro"), atual = sel.value;
+  const retiros = [...new Set(adminAnimaisCache.map(a=>a._retiro).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  sel.innerHTML = `<option value="">Todos os retiros</option>` + retiros.map(r=>`<option value="${r}">${r}</option>`).join("");
+  if(retiros.includes(atual)) sel.value = atual;
+  renderAdminDestinos();
+}
+function renderAdminDestinos(){
+  const d = $("adDestData").value, r = $("adDestRetiro").value, num = normNumero($("adDestNumero").value);
+  let lista = adminAnimaisCache.filter(a=> a.tipoAuditoria!=="confinamento" && (parseFloat(a.carimbo)||0)>0);
+  if(d) lista = lista.filter(a=> a.data===d);
+  if(r) lista = lista.filter(a=> a._retiro===r);
+  if(num) lista = lista.filter(a=> normNumero(a.controleNumero).includes(num));
+  const g = {};
+  lista.forEach(a=>{
+    const v = Math.round(parseFloat(a.carimbo)*10)/10, k = v+"|"+a._retiro;
+    if(!g[k]) g[k] = { valor:v, retiro:a._retiro, animais:[] };
+    g[k].animais.push(a);
+  });
+  adDestGrupos = Object.values(g).sort((x,y)=> x.valor-y.valor || x.retiro.localeCompare(y.retiro));
+  const fmt = v=> v.toLocaleString("pt-BR",{maximumFractionDigits:1});
+  $("adDestTabela").innerHTML = adDestGrupos.map((gr,i)=>{
+    const porDest = {};
+    gr.animais.forEach(a=>{ const k = destinoComDetalhe(a) || "sem destino"; (porDest[k]=porDest[k]||{})[a.raca||"Sem raça"] = ((porDest[k]||{})[a.raca||"Sem raça"]||0)+1; });
+    const dest = Object.entries(porDest).map(([k,rs])=>`<div>${k==="sem destino"?"<span style='color:var(--cinza);'>sem destino</span>":k} <span class="meta">(${Object.entries(rs).map(([r,n])=>`${r} ${n}`).join(", ")})</span></div>`).join("");
+    return `<tr data-g="${i}" style="cursor:pointer;"><td><strong>${fmt(gr.valor)} @</strong></td><td>${gr.retiro}</td><td>${gr.animais.length}<div class="meta">${resumoRacas(gr.animais)}</div></td><td>${dest} <span style="color:var(--verde);">✎</span></td></tr>`;
+  }).join("");
+  $("adDestVazio").classList.toggle("hidden", adDestGrupos.length>0);
+  document.querySelectorAll("#adDestTabela tr[data-g]").forEach(tr=> tr.onclick = ()=> abrirAdLote(adDestGrupos[Number(tr.dataset.g)]));
+}
+["adDestData","adDestRetiro"].forEach(id=> $(id).addEventListener("change", renderAdminDestinos));
+$("adDestNumero").addEventListener("input", renderAdminDestinos);
+function abrirAdLote(g){
+  adLoteAtual = { grupo:g, sel:new Set(contagemPorRaca(g.animais).map(([r])=>r)) };
+  const fmt = v=> v.toLocaleString("pt-BR",{maximumFractionDigits:1});
+  $("adlTitulo").textContent = `Lote ${fmt(g.valor)} @ · ${g.retiro}`;
+  $("adlDestino").innerHTML = `<option value="">Selecione...</option>` + DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
+  $("adlDestino").value = ""; $("adlDestinoOutro").value = ""; $("adlDestinoOutro").classList.add("hidden");
+  $("adlDetalhe").value = ""; $("adlDetalheWrap").classList.add("hidden");
+  renderAdLoteRacas();
+  $("modalAdDestino").classList.remove("hidden");
+}
+function renderAdLoteRacas(){
+  const g = adLoteAtual.grupo, sel = adLoteAtual.sel;
+  $("adlRacas").innerHTML = contagemPorRaca(g.animais).map(([r,n])=>`<button type="button" class="chip${sel.has(r)?" on":""}" data-r="${r}">${sel.has(r)?"✓ ":""}${r} (${n})</button>`).join("");
+  $("adlRacas").querySelectorAll("[data-r]").forEach(b=> b.onclick = ()=>{ const r=b.dataset.r; sel.has(r)?sel.delete(r):sel.add(r); renderAdLoteRacas(); });
+  const alvo = g.animais.filter(a=> sel.has(a.raca||"Sem raça"));
+  const travados = alvo.filter(a=>a.origemDestinoTravado).length;
+  $("adlSub").textContent = `${alvo.length} animal(is) marcados${travados?` · ${travados} já tinham destino (vai trocar)`:""}`;
+  $("adlSave").textContent = `Aplicar (${alvo.length})`; $("adlSave").disabled = !alvo.length;
+}
+$("adlDestino").addEventListener("change", ()=>{
+  const v = $("adlDestino").value;
+  $("adlDestinoOutro").classList.toggle("hidden", v!=="Outro");
+  if(v){ const info = infoDetalheDestino(v); $("adlDetalheLbl").textContent = info.lbl; $("adlDetalhe").placeholder = info.ph; $("adlDetalheWrap").classList.remove("hidden"); }
+  else $("adlDetalheWrap").classList.add("hidden");
+});
+$("adlCancel").onclick = ()=>{ $("modalAdDestino").classList.add("hidden"); adLoteAtual = null; };
+$("adlSave").onclick = async ()=>{
+  if(!adLoteAtual || !isAdmin) return;
+  const destino = $("adlDestino").value==="Outro" ? $("adlDestinoOutro").value.trim() : $("adlDestino").value;
+  const destinoDetalhe = $("adlDetalhe").value.trim();
+  if(!destino){ alert("Selecione o destino."); return; }
+  if(!destinoDetalhe){ alert(infoDetalheDestino($("adlDestino").value).lbl.replace("?","") + " — preencha pra continuar."); return; }
+  const g = adLoteAtual.grupo;
+  const alvo = g.animais.filter(a=> adLoteAtual.sel.has(a.raca||"Sem raça"));
+  if(!alvo.length) return;
+  if(!confirm(`Aplicar "${destino} — ${destinoDetalhe}" em ${alvo.length} animal(is) do lote ${g.valor} @ (${resumoRacas(alvo)})?`)) return;
+  const dados = { destino, destinoDetalhe, origemDestinoTravado:true, origemDestinoEm: Date.now(), destinoPorAdmin: currentUser.email||"" };
+  const antes = [...new Set(alvo.map(a=> destinoComDetalhe(a)||"sem destino"))].join(", ");
+  try{
+    $("adlSave").disabled = true;
+    for(let i=0;i<alvo.length;i+=400){
+      const batch = db.batch();
+      alvo.slice(i,i+400).forEach(a=> batch.update(db.collection("animais").doc(a.id), dados));
+      await batch.commit();
+    }
+    alvo.forEach(a=> Object.assign(a, dados));
+    registrarLog("Destino de lote alterado", `Lote ${g.valor} @ · ${g.retiro} · ${formatarDataBR($("adDestData").value)||"todas as datas"}\n${alvo.length} animais (${resumoRacas(alvo)})\nAntes: ${antes}\nDepois: ${destino} — ${destinoDetalhe}`);
+    renderAdminDestinos(); aplicarFiltrosAdmin();
+    // continua aberto se sobrou raça sem esse destino
+    const novoG = adDestGrupos.find(x=> x.valor===g.valor && x.retiro===g.retiro);
+    $("modalAdDestino").classList.add("hidden"); adLoteAtual = null;
+    toastRapido(`🎯 Destino aplicado em ${alvo.length} animal(is).`);
+  }catch(e){
+    console.error(e);
+    alert("Erro ao salvar: " + (e.code==="permission-denied" ? "sem permissão nas regras do Firebase." : (e.message||e)));
+  }finally{ $("adlSave").disabled = false; }
+};
 /* ================= COMPILADO GERAL (1 folha) ================= */
 function abrirCompilado(){
   const sel = $("compRetiro"), atual = sel.value;
