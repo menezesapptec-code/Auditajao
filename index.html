@@ -999,10 +999,25 @@ async function calcularProximaOrdemParaData(dataISO, retiro){
 /* Fila offline: cada operação ganha uma chave única (k) — é por ela que a operação sai da
    fila depois de enviada (antes era pela referência do objeto, e se a fila fosse relida do
    aparelho no meio do envio nada saía e tudo era reenviado sem parar). */
+/* Grava no aparelho com proteção: se a memória do navegador encher, avisa na hora
+   (em vez de falhar calado e o lançamento não ficar guardado). */
+let avisoMemoriaCheia = false;
+function salvarLocal(chave, valor){
+  try{ localStorage.setItem(chave, typeof valor==="string" ? valor : JSON.stringify(valor)); return true; }
+  catch(e){
+    console.error("Falha ao gravar no aparelho:", e);
+    if(!avisoMemoriaCheia){
+      avisoMemoriaCheia = true;
+      alert("⚠ ATENÇÃO: a memória deste aparelho para o app encheu e o último lançamento pode não ter ficado guardado.\n\nNão feche o app. Conecte na internet pra sincronizar e avise o administrador.");
+      setTimeout(()=> avisoMemoriaCheia = false, 60000);
+    }
+    return false;
+  }
+}
 function chaveOp(){ return 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 function salvarFilaLocal(){
   filaOffline.forEach(op=>{ if(!op.k) op.k = chaveOp(); });
-  localStorage.setItem(FILA_KEY, JSON.stringify(filaOffline));
+  salvarLocal(FILA_KEY, filaOffline);
 }
 function carregarFilaLocal(){
   try{ filaOffline = JSON.parse(localStorage.getItem(FILA_KEY) || "[]"); }catch(e){ filaOffline = []; }
@@ -1030,7 +1045,7 @@ function compactarFila(){
   filaOffline = out.filter(Boolean);
   salvarFilaLocal();
 }
-function salvarCacheServicos(){ localStorage.setItem(CACHE_KEY, JSON.stringify(servicosCache)); }
+function salvarCacheServicos(){ salvarLocal(CACHE_KEY, servicosCache); }
 function carregarCacheServicos(){ servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]"); }
 
 function showView(view){
@@ -1114,7 +1129,10 @@ $("btnLogin").onclick = async ()=>{
   try{ await auth.signInWithEmailAndPassword($("loginEmail").value.trim(), $("loginSenha").value); }
   catch(e){ $("loginErro").textContent = "E-mail ou senha inválidos."; $("loginErro").classList.remove("hidden"); }
 };
-$("btnLogout").onclick = ()=>{ if(adminFeedUnsub) adminFeedUnsub(); auth.signOut(); };
+$("btnLogout").onclick = ()=>{
+  if(filaOffline.length && !confirm(`Ainda tem ${filaOffline.length} lançamento(s) aguardando envio neste aparelho.\n\nEles continuam guardados aqui e sobem quando você entrar de novo neste mesmo aparelho. Não limpe os dados do navegador.\n\nSair mesmo assim?`)) return;
+  if(adminFeedUnsub) adminFeedUnsub(); auth.signOut();
+};
 
 auth.onAuthStateChanged(async (user)=>{
   if(user){
@@ -1130,11 +1148,21 @@ auth.onAuthStateChanged(async (user)=>{
     // checa se é auditor ativo
     isAdmin = false;
     let liberado = false;
+    const chaveOk = "cs_aud_ok_" + user.uid;
     try{
       const doc = await db.collection("auditores").doc(user.uid).get();
       liberado = doc.exists && doc.data().ativo === true;
-      if(liberado) currentAuditorNome = doc.data().nome || "";
-    }catch(e){ console.error(e); liberado = !navigator.onLine; } // offline: deixa entrar com cache local
+      if(liberado){ currentAuditorNome = doc.data().nome || ""; salvarLocal(chaveOk, {nome: currentAuditorNome, em: Date.now()}); }
+      else { try{ localStorage.removeItem(chaveOk); }catch(_){} }
+    }catch(e){
+      console.error(e);
+      // sem conseguir consultar (offline, limite diário do banco, instabilidade): se este aparelho
+      // já foi liberado antes, deixa entrar e continuar lançando — nada se perde, sobe depois
+      let cache = null; try{ cache = JSON.parse(localStorage.getItem(chaveOk) || "null"); }catch(_){}
+      if(e && e.code === "permission-denied") liberado = false;
+      else if(cache){ liberado = true; currentAuditorNome = cache.nome || ""; }
+      else liberado = !navigator.onLine;
+    }
     if(!liberado){
       $("loginErro").textContent = "Acesso bloqueado. Fale com o administrador.";
       $("loginErro").classList.remove("hidden");
@@ -1296,7 +1324,7 @@ $("iaConfirm").onclick = async ()=>{
 
   servicoAtual = {id, ...dados};
   animaisAtual = [];
-  localStorage.setItem("animais_"+id, JSON.stringify(animaisAtual));
+  salvarLocal("animais_"+id, animaisAtual);
   $("origensList").innerHTML = "";
 
   if(tipoAuditoriaAtual === "confinamento"){
@@ -1395,7 +1423,7 @@ $("btnRegistrarLinha").onclick = ()=>{
   };
   animaisAtual.push(registro);
   proximaOrdemDoDia++;
-  localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+  salvarLocal("animais_"+servicoAtual.id, animaisAtual);
   filaOffline.push({tipo:"novoAnimal", id:registro.id, dados:registro});
   salvarFilaLocal();
 
@@ -1507,7 +1535,7 @@ $("btnSalvarFotoLocal").onclick = ()=>{
     const idx = animaisAtual.findIndex(a=>a.id===animalAleijadoAtual.id);
     if(idx>=0){
       Object.assign(animaisAtual[idx], dados);
-      localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+      salvarLocal("animais_"+servicoAtual.id, animaisAtual);
     }
     filaOffline.push({tipo:"updAnimal", id:animalAleijadoAtual.id, dados});
     salvarFilaLocal(); processarFila();
@@ -1538,7 +1566,7 @@ async function abrirServico(id, novo=false){
         .map(a=> naFila.has(a.id) && locaisPorId[a.id] ? {...a, ...locaisPorId[a.id]} : a)
         .concat(soLocais)
         .sort((a,b)=>(Number(a.ord)||0)-(Number(b.ord)||0));
-      localStorage.setItem("animais_"+id, JSON.stringify(animaisAtual));
+      salvarLocal("animais_"+id, animaisAtual);
     }catch(e){ console.error(e); }
   }
   tipoAuditoriaAtual = servicoAtual.tipoAuditoria || "curral";
@@ -1584,7 +1612,7 @@ $("fOrigem").addEventListener("change", ()=>{
     a.origem = origem; n++;
     filaOffline.push({tipo:"updAnimal", id:a.id, dados:{ origem }});
   });
-  localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+  salvarLocal("animais_"+servicoAtual.id, animaisAtual);
   salvarFilaLocal(); processarFila();
   renderTabela();
   if(n) toastRapido(`📍 Origem "${origem||"—"}" aplicada em ${n} animal(is) deste controle.`);
@@ -1731,7 +1759,7 @@ $("fmConfirm").onclick = ()=>{
       alterados++;
     }
   });
-  localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+  salvarLocal("animais_"+servicoAtual.id, animaisAtual);
   salvarFilaLocal();
 
   const hora = registrarHoraOperacao("horaTermino", pasto ? { pasto } : null);
@@ -2052,7 +2080,7 @@ $("lcConfirm").onclick = ()=>{
     try{
       const lista = JSON.parse(localStorage.getItem("animais_"+cid) || "[]");
       lista.forEach(x=>{ if(porControle[cid].includes(x.id)) Object.assign(x, dados); });
-      localStorage.setItem("animais_"+cid, JSON.stringify(lista));
+      salvarLocal("animais_"+cid, lista);
     }catch(e){}
     if(servicoAtual && servicoAtual.id===cid){
       animaisAtual.forEach(x=>{ if(porControle[cid].includes(x.id)) Object.assign(x, dados); });
@@ -2111,13 +2139,8 @@ async function carregarConfig(){
         }catch(e){}
         d.controlesExcluidos.forEach(id=>{ if(localStorage.getItem("animais_"+id)!==null || servicosCache.some(s=>s.id===id) || filaOffline.some(op=>op.id===id || (op.dados&&op.dados.controleId===id))) descartarControleLocal(id); });
       }
-      if(d.resetEm && String(d.resetEm) !== (localStorage.getItem("cs_reset_visto")||"")){
-        // sistema foi zerado pelo admin: descarta o que este aparelho tinha guardado
-        // (inclusive a fila offline, pra não reenviar dados antigos)
-        const jaTinhaVisto = localStorage.getItem("cs_reset_visto");
-        limparDadosLocais(d.resetEm);
-        if(jaTinhaVisto !== null || servicosCache.length) console.info("Sistema zerado pelo administrador — dados locais limpos.");
-      }
+      // (a limpeza automática do aparelho por "zerar sistema" foi removida junto com o botão:
+      //  o app nunca apaga lançamentos guardados no aparelho por conta própria)
     }
   }catch(e){ console.error(e); }
   DESTINOS_OPCOES = [...configCache.destinos, "Outro"];
@@ -2126,6 +2149,7 @@ async function carregarConfig(){
 let avisoPermissaoConfigMostrado = false;
 function avisarErroConfig(e){
   console.error(e);
+  if(e && (e.code==="resource-exhausted" || e.code==="unavailable")) return; // limite/instabilidade: não assusta o auditor
   if(avisoPermissaoConfigMostrado) return;
   avisoPermissaoConfigMostrado = true;
   alert("⚠ Não foi possível salvar no servidor" + (e && e.code==="permission-denied" ? " (sem permissão nas regras do Firebase)" : "") + ".\nA alteração ficou só neste aparelho e não vai aparecer nos outros.");
@@ -2355,7 +2379,7 @@ $("erSave").onclick = ()=>{
   const pesoER = parseFloat(String($("erPeso").value).replace(",", "."));
   const dados = { raca:$("erRaca").value, categoria:$("erCategoria").value, carimbo, peso: pesoER>0 ? pesoER : null, obs:$("erObs").value.trim() };
   Object.assign(a, dados);
-  localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+  salvarLocal("animais_"+servicoAtual.id, animaisAtual);
   filaOffline.push({tipo:"updAnimal", id:a.id, dados});
   const totais = { totalAnimais: somaAnimaisControle(), totalArrobas: somaArrobas() };
   Object.assign(servicoAtual, totais);
@@ -2568,7 +2592,7 @@ function confirmarESalvarAnimal(){
   };
   animaisAtual.push(animal);
   proximaOrdemDoDia++;
-  localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+  salvarLocal("animais_"+servicoAtual.id, animaisAtual);
   filaOffline.push({tipo:"novoAnimal", id:animal.id, dados:animal});
   salvarFilaLocal();
 
@@ -2599,7 +2623,7 @@ function excluirAnimal(id){
   animaisAtual = animaisAtual.filter(a=>a.id!==id);
   // não renumera o Ord. dos que sobraram — a Ordem é travada pela sequência do dia,
   // não pela posição dentro da lista deste controle
-  localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+  salvarLocal("animais_"+servicoAtual.id, animaisAtual);
   // tira da fila qualquer envio pendente desse animal (senão ele "volta" quando sincronizar)
   // e agenda a exclusão no servidor — feita na hora se tiver internet, ou quando voltar
   filaOffline = filaOffline.filter(op=> op.id !== id);
@@ -2676,9 +2700,9 @@ $("btnExportExcel").onclick = ()=>{
     ["Total Animais", $("cTotal").textContent], ["Total @ (Carimbo)", $("cArrobas").textContent],
     ["Animais/Hora", $("cAnimaisHora").textContent], ["Confinamento", $("cConf").textContent],
     ["Recria", $("cRecria").textContent], ["Refugo", $("cRefugo").textContent], ["Outros", $("cOutro").textContent],
-    [], ["ORD.","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","PESO (KG)","CARIMBO (@)","STATUS","OBS."]
+    [], ["ORD.","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","CARIMBO (@)","STATUS","OBS."]
   ];
-  animaisAtual.forEach(a=> cab.push([a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",parseFloat(a.peso)>0?a.peso:"",a.carimbo,a.status,a.obs]));
+  animaisAtual.forEach(a=> cab.push([a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,a.status,a.obs]));
   const ws = XLSX.utils.aoa_to_sheet(cab);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Controle");
   XLSX.writeFile(wb, nomeArquivo("xlsx"));
@@ -2701,7 +2725,6 @@ $("btnExportPDF").onclick = async ()=>{
       ["Hora término", s.horaTermino||"—"],
       ["Pasto", s.pasto||"—"],
       ["Total de animais", String(totalAnimais)], ["Total @ (carimbo)", somaArrobas().toFixed(1)],
-      ["Peso médio", pesoMedio(animaisAtual).n ? `${fmtN(pesoMedio(animaisAtual).media,1)} kg (${pesoMedio(animaisAtual).n} pesados)` : "—"],
       ["Animais/hora", $("cAnimaisHora").textContent],
       ["Confinamento", $("cConf").textContent], ["Recria", $("cRecria").textContent],
       ["Refugo", $("cRefugo").textContent], ["Outros destinos", $("cOutro").textContent],
@@ -2867,7 +2890,7 @@ $("btnConfirmarLote").onclick = async ()=>{
     // atualiza cache local do controle aberto, se algum item pertencer a ele
     if(servicoAtual){
       animaisAtual.forEach(a=>{ if(selecionados.has(a.id)) Object.assign(a, {status:"conferido", loteId, conferente1:conf1, conferente2:conf2}); });
-      localStorage.setItem("animais_"+servicoAtual.id, JSON.stringify(animaisAtual));
+      salvarLocal("animais_"+servicoAtual.id, animaisAtual);
     }
     selecionados.clear(); $("inConf1").value=""; $("inConf2").value="";
     await carregarPendentes(); renderPendChecklist();
@@ -3117,7 +3140,7 @@ $("btnCompiladoPDF").onclick = async ()=>{
   const periodo = (D.de||D.ate) ? `${D.de?formatarDataBR(D.de):"início"} a ${D.ate?formatarDataBR(D.ate):"hoje"}` : (D.dias.length ? `${formatarDataBR(D.dias[0].data)} a ${formatarDataBR(D.dias[D.dias.length-1].data)}` : "—");
   let y = adicionarLogoCabecalho(doc, "COMPILADO GERAL — AUDITORIA DE ANIMAIS", `Fazenda Jaó · ${D.ret||"Todos os retiros"} · Período: ${periodo}`);
   // KPIs
-  const kpis = [[fmtN(D.total),"TOTAL DE ANIMAIS"],[fmtN(D.dias.length),"DIAS AUDITADOS"],[D.porHora?fmtN(D.porHora,1):"—","ANIMAIS/HORA"],[fmtN(D.mediaDia,0),"MÉDIA POR DIA"],[fmtN(D.arrobas,1),"TOTAL @"],[fmtHoras(D.horasTot),"HORAS TRAB."],[D.pesados?fmtN(D.pesoMed,1)+" kg":"—","PESO MÉDIO"]];
+  const kpis = [[fmtN(D.total),"TOTAL DE ANIMAIS"],[fmtN(D.dias.length),"DIAS AUDITADOS"],[D.porHora?fmtN(D.porHora,1):"—","ANIMAIS/HORA"],[fmtN(D.mediaDia,0),"MÉDIA POR DIA"],[fmtN(D.arrobas,1),"TOTAL @"],[fmtHoras(D.horasTot),"HORAS TRABALHADAS"]];
   const bw = (W-2*mx-(kpis.length-1)*3)/kpis.length;
   kpis.forEach((k,i)=>{
     const x = mx + i*(bw+3);
@@ -3702,8 +3725,8 @@ function descricaoLocalLancamento(a){
 }
 $("btnAdminExportExcel").onclick = ()=>{
   const lista = listaOrdenadaComIndiceGeral();
-  const cab = [["Nº GERAL","DATA","CONTROLE","TIPO","ORD. (DO DIA)","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","PESO (KG)","CARIMBO (@)","LOCAL","STATUS","AUDITOR","OBS."]];
-  lista.forEach(a=> cab.push([a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",parseFloat(a.peso)>0?a.peso:"",a.carimbo,descricaoLocalLancamento(a),a.status,a.criadoPorNome,a.obs]));
+  const cab = [["Nº GERAL","DATA","CONTROLE","TIPO","ORD. (DO DIA)","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","CARIMBO (@)","LOCAL","STATUS","AUDITOR","OBS."]];
+  lista.forEach(a=> cab.push([a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,descricaoLocalLancamento(a),a.status,a.criadoPorNome,a.obs]));
   const ws = XLSX.utils.aoa_to_sheet(cab); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Todos"); XLSX.writeFile(wb, "Controle_Servico_Geral.xlsx");
 };
@@ -4035,8 +4058,8 @@ async function gerarRelatorioPDFCompleto(lista, opts){
   doc.setFontSize(14); doc.setTextColor(0,0,0); doc.setFont(undefined,"bold");
   doc.text(opts.titulo, 14, 15);
   doc.setFont(undefined,"normal");
-  doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Ord.","Tipo","Raça","Categoria","Origem","Destino","Pasto","Peso","@","Local","Status","Auditor","Obs."]],
-    body: lista.map(a=>[a.indiceGeral,formatarDataBR(a.data),a.controleNumero,a.ord,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",parseFloat(a.peso)>0?a.peso:"",a.carimbo,descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome||"",a.obs||""]), styles:{fontSize:6.3} });
+  doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Ord.","Tipo","Raça","Categoria","Origem","Destino","Pasto","@","Local","Status","Auditor","Obs."]],
+    body: lista.map(a=>[a.indiceGeral,formatarDataBR(a.data),a.controleNumero,a.ord,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome||"",a.obs||""]), styles:{fontSize:6.5} });
   doc.save(opts.arquivo);
 }
 
