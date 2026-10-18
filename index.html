@@ -557,7 +557,7 @@ tr.editavel:hover td{background:#f4faf6;}
   <div id="adminCompiladoView" class="hidden">
     <div class="card">
       <h2>Compilado geral dos animais auditados</h2>
-      <p class="sub">Resumo de tudo numa folha só. Escolha o período e o retiro (em branco = tudo) e gere o PDF.</p>
+      <p class="sub">Resumo de todos os auditores numa folha só. Escolha o período e o retiro e gere o PDF.</p>
       <div class="grid">
         <div><label>De</label><input type="date" id="compDe"></div>
         <div><label>Até</label><input type="date" id="compAte"></div>
@@ -671,6 +671,9 @@ tr.editavel:hover td{background:#f4faf6;}
   </div>
 </div>
 
+<!-- ==================== AUDITOR: COMPILADO GERAL (todos os auditores) ==================== -->
+<div id="viewCompiladoAud" class="container hidden"></div>
+
 <!-- ==================== AUDITOR: CONFIGURAÇÃO ==================== -->
 <div id="viewConfig" class="container hidden">
   <div class="card">
@@ -695,6 +698,7 @@ tr.editavel:hover td{background:#f4faf6;}
   <button data-target="lista" class="active"><div>📋</div>Controles</button>
   <button data-target="conferencia"><div>✅</div>Conferência</button>
   <button data-target="carimbos"><div>⚖</div>Carimbos</button>
+  <button data-target="compilado"><div>📄</div>Compilado</button>
   <button data-target="config"><div>⚙</div>Config</button>
 </div>
 <!-- NAV ADMIN (sem barra inferior — painel único) -->
@@ -1049,7 +1053,7 @@ function salvarCacheServicos(){ salvarLocal(CACHE_KEY, servicosCache); }
 function carregarCacheServicos(){ servicosCache = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]"); }
 
 function showView(view){
-  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewCarimbos","viewConfig","viewAdmin","viewForaCurral","viewConfinamento","viewFotoLocal"].forEach(v=>$(v).classList.add("hidden"));
+  ["viewLogin","viewLista","viewServico","viewWizardAnimal","viewConferencia","viewCarimbos","viewCompiladoAud","viewConfig","viewAdmin","viewForaCurral","viewConfinamento","viewFotoLocal"].forEach(v=>$(v).classList.add("hidden"));
   $(view).classList.remove("hidden");
   const semNav = ["viewLogin","viewWizardAnimal","viewForaCurral","viewConfinamento","viewFotoLocal"].includes(view);
   $("navAuditor").classList.toggle("hidden", isAdmin || semNav);
@@ -1188,6 +1192,7 @@ document.querySelectorAll("#navAuditor button").forEach(b=>{
     if(b.dataset.target==="lista") abrirLista();
     else if(b.dataset.target==="conferencia") abrirConferencia();
     else if(b.dataset.target==="carimbos") abrirCarimbos();
+    else if(b.dataset.target==="compilado") abrirCompiladoAuditor();
     else if(b.dataset.target==="config") abrirConfig();
   };
 });
@@ -2945,7 +2950,12 @@ function abrirAbaAdmin(aba){
   if(aba==="retiros") abrirRetiros();
   if(aba==="ordens") renderOrdensAdmin();
   if(aba==="registro") carregarRegistro(true);
-  if(aba==="compilado") abrirCompilado();
+  if(aba==="compilado"){
+    compiladoModo = "admin";
+    const bloco = $("adminCompiladoView");
+    if(bloco.parentElement !== $("viewAdmin")) $("adminDestinosView").insertAdjacentElement("afterend", bloco);
+    abrirCompilado();
+  }
   if(aba==="destinos") abrirAdminDestinos();
 }
 /* ================= ADMIN: DESTINO POR LOTE (carimbo + retiro, por raça) ================= */
@@ -3041,16 +3051,26 @@ $("adlSave").onclick = async ()=>{
   }finally{ $("adlSave").disabled = false; }
 };
 /* ================= COMPILADO GERAL (1 folha) ================= */
+/* O mesmo Compilado serve o admin (dados já carregados no painel) e os auditores
+   (busca no banco só o período escolhido, de TODOS os auditores). */
+let compiladoModo = "admin";
+let compAudAnimais = [], compAudControles = [], compAudFaixa = "";
+function fonteCompilado(){
+  return compiladoModo === "auditor"
+    ? { animais: compAudAnimais, controles: compAudControles }
+    : { animais: adminAnimaisCache, controles: adminControlesCache };
+}
 function abrirCompilado(){
   const sel = $("compRetiro"), atual = sel.value;
-  const retiros = [...new Set(adminAnimaisCache.map(a=>a._retiro).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  const retiros = [...new Set(fonteCompilado().animais.map(a=>a._retiro).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
   sel.innerHTML = `<option value="">Todos os retiros</option>` + retiros.map(r=>`<option value="${r}">${r}</option>`).join("");
   if(retiros.includes(atual)) sel.value = atual;
   renderCompilado();
 }
 function dadosCompilado(){
   const de = $("compDe").value, ate = $("compAte").value, ret = $("compRetiro").value;
-  const lista = adminAnimaisCache.filter(a=>{
+  const F = fonteCompilado();
+  const lista = F.animais.filter(a=>{
     if(ret && a._retiro !== ret) return false;
     if(de && (a.data||"") < de) return false;
     if(ate && (a.data||"") > ate) return false;
@@ -3070,7 +3090,7 @@ function dadosCompilado(){
   // por dia: animais e horas (somando os controles daquele dia, com pausas descontadas)
   const porDia = {};
   lista.forEach(a=>{ const d=a.data||"—"; if(!porDia[d]) porDia[d]={animais:0, ctrl:new Set()}; porDia[d].animais+=qtdAnimal(a); porDia[d].ctrl.add(a.controleId); });
-  const ctrlPorId = {}; adminControlesCache.forEach(c=> ctrlPorId[c.id]=c);
+  const ctrlPorId = {}; F.controles.forEach(c=> ctrlPorId[c.id]=c);
   const dias = Object.keys(porDia).sort().map(d=>{
     let horas = 0, animaisComHora = 0;
     porDia[d].ctrl.forEach(cid=>{
@@ -3109,7 +3129,7 @@ function renderCompilado(){
   $("compKpis").innerHTML = kpi(fmtN(D.total),"Total de animais") + kpi(fmtN(D.dias.length),"Dias auditados")
     + kpi(D.porHora ? fmtN(D.porHora,1) : "—","Animais/hora") + kpi(fmtN(D.mediaDia,0),"Média por dia")
     + kpi(fmtN(D.arrobas,1),"Total @") + kpi(fmtHoras(D.horasTot),"Horas trabalhadas")
-    + kpi(D.pesados ? fmtN(D.pesoMed,1)+" kg" : "—", D.pesados ? `Peso médio (${fmtN(D.pesados)} pesados)` : "Peso médio");
+    + (compiladoModo==="admin" ? kpi(D.pesados ? fmtN(D.pesoMed,1)+" kg" : "—", D.pesados ? `Peso médio (${fmtN(D.pesados)} pesados)` : "Peso médio") : ""); // peso só no painel admin
   const linha = (a,b)=>`<div class="res-row"><span>${a}</span><strong>${b}</strong></div>`;
   $("compRaca").innerHTML = D.racas.length ? D.racas.map(([r,n])=>linha(r, `${fmtN(n)} (${fmtN(100*n/(D.total||1),1)}%)`)).join("") : `<p class="pending">—</p>`;
   $("compCarimbo").innerHTML = D.carimbos.length ? D.carimbos.map(([v,n])=>linha(`${fmtN(v,v%1?1:0)} @`, fmtN(n))).join("") : `<p class="pending">—</p>`;
@@ -3120,7 +3140,49 @@ function renderCompilado(){
     if(D.dias.length) chartsAdmin.chartCompilado = new Chart($("chartCompilado"), configGraficoCompilado(D, false));
   }
 }
-["compDe","compAte","compRetiro"].forEach(id=> $(id).addEventListener("change", renderCompilado));
+$("compRetiro").addEventListener("change", renderCompilado);
+["compDe","compAte"].forEach(id=> $(id).addEventListener("change", ()=>{
+  if(compiladoModo === "auditor") carregarCompiladoAuditor(); else renderCompilado();
+}));
+/* ---- Compilado na tela do auditor ---- */
+async function abrirCompiladoAuditor(){
+  showView("viewCompiladoAud"); setNavActive("compilado");
+  $("topTitle").textContent = "Compilado geral";
+  compiladoModo = "auditor";
+  const bloco = $("adminCompiladoView");
+  if(bloco.parentElement !== $("viewCompiladoAud")) $("viewCompiladoAud").appendChild(bloco);
+  bloco.classList.remove("hidden");
+  if(!$("compDe").value && !$("compAte").value){ $("compDe").value = hojeLocalISO(); $("compAte").value = hojeLocalISO(); }
+  await carregarCompiladoAuditor();
+}
+async function carregarCompiladoAuditor(){
+  let de = $("compDe").value, ate = $("compAte").value;
+  if(!de && !ate){ de = ate = hojeLocalISO(); $("compDe").value = de; $("compAte").value = ate; }
+  if(!de) de = ate; if(!ate) ate = de;
+  if(de > ate){ const t = de; de = ate; ate = t; $("compDe").value = de; $("compAte").value = ate; }
+  const faixa = de + "|" + ate;
+  if(faixa !== compAudFaixa){
+    if(!navigator.onLine){ alert("Precisa de internet pra gerar o compilado de todos os auditores."); return; }
+    $("compKpis").innerHTML = `<p class="pending">Carregando dados de ${formatarDataBR(de)} a ${formatarDataBR(ate)}...</p>`;
+    try{
+      const [sa, sc] = await Promise.all([
+        db.collection("animais").where("data",">=",de).where("data","<=",ate).get(),
+        db.collection("controles").where("data",">=",de).where("data","<=",ate).get()
+      ]);
+      compAudControles = sc.docs.map(d=>({id:d.id, ...d.data()}));
+      const retPorCtrl = {}; compAudControles.forEach(c=> retPorCtrl[c.id] = (c.retiro||"").trim());
+      const oficial = {}; (configCache.retiros||[]).forEach(r=> oficial[normRetiro(r)] = r);
+      const padr = r=>{ const t=String(r||"").normalize("NFC").trim(); if(!t) return "Sem retiro"; const k=normRetiro(t); return oficial[k] || (oficial[k] = t.charAt(0).toUpperCase()+t.slice(1)); };
+      compAudAnimais = sa.docs.map(d=>{ const a = {id:d.id, ...d.data()}; a._retiro = padr(retPorCtrl[a.controleId] || a.retiro); return a; });
+      compAudFaixa = faixa;
+    }catch(e){
+      console.error(e);
+      $("compKpis").innerHTML = `<p class="pending">Não foi possível carregar${e.code==="resource-exhausted"?" (limite diário do banco)":""}. Tente de novo mais tarde.</p>`;
+      return;
+    }
+  }
+  abrirCompilado();
+}
 function imagemGraficoCompilado(D){
   return new Promise(resolve=>{
     const W = 1400, H = 700;
