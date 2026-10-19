@@ -2888,19 +2888,40 @@ $("btnConfirmarLote").onclick = async ()=>{
   const loteId = uid();
   const conf1 = $("inConf1").value.trim(), conf2 = $("inConf2").value.trim();
   const dados = { status:"conferido", loteId, conferente1:conf1, conferente2:conf2, confAt: firebase.firestore.FieldValue.serverTimestamp() };
-  try{
-    const batch = db.batch();
-    selecionados.forEach(id=> batch.update(db.collection("animais").doc(id), dados));
-    await batch.commit();
-    // atualiza cache local do controle aberto, se algum item pertencer a ele
+  // o Firebase aceita no máximo 500 alterações por envio — manda em pacotes de 400
+  // (antes ia tudo num pacote só e, com mais de 500 animais, o banco recusava o lote inteiro)
+  const ids = [...selecionados];
+  const btn = $("btnConfirmarLote"), txtOrig = btn.textContent;
+  btn.disabled = true;
+  let feitos = 0, erro = null;
+  for(let i=0; i<ids.length; i+=400){
+    const pacote = ids.slice(i, i+400);
+    btn.textContent = `Soltando... ${feitos}/${ids.length}`;
+    let ok = false;
+    for(let tent=1; tent<=3 && !ok; tent++){   // até 3 tentativas por pacote (internet instável)
+      try{
+        const batch = db.batch();
+        pacote.forEach(id=> batch.update(db.collection("animais").doc(id), dados));
+        await batch.commit();
+        ok = true;
+      }catch(e){ erro = e; console.error("Pacote falhou (tentativa "+tent+"):", e); if(tent<3) await new Promise(r=>setTimeout(r, 2000*tent)); }
+    }
+    if(!ok) break;
+    feitos += pacote.length;
+    pacote.forEach(id=> selecionados.delete(id));
     if(servicoAtual){
-      animaisAtual.forEach(a=>{ if(selecionados.has(a.id)) Object.assign(a, {status:"conferido", loteId, conferente1:conf1, conferente2:conf2}); });
+      animaisAtual.forEach(a=>{ if(pacote.includes(a.id)) Object.assign(a, {status:"conferido", loteId, conferente1:conf1, conferente2:conf2}); });
       salvarLocal("animais_"+servicoAtual.id, animaisAtual);
     }
+  }
+  btn.disabled = false; btn.textContent = txtOrig;
+  await carregarPendentes(); renderPendChecklist();
+  if(feitos === ids.length){
     selecionados.clear(); $("inConf1").value=""; $("inConf2").value="";
-    await carregarPendentes(); renderPendChecklist();
-    alert("Lote confirmado e solto com sucesso.");
-  }catch(e){ console.error(e); alert("Erro ao confirmar o lote."); }
+    alert(`✅ Lote confirmado: ${feitos} animais soltos.`);
+  } else {
+    alert(`⚠ Soltou ${feitos} de ${ids.length} animais. O resto continua pendente (nada se perdeu).\n\n${erro && erro.code==="resource-exhausted" ? "Limite diário do banco atingido — tente de novo depois das 4h." : "Provavelmente a internet caiu — confira a conexão e clique em Confirmar de novo pra soltar os que faltaram."}`);
+  }
 };
 async function renderConferidos(){
   const tbody = $("tabelaConferidos"); tbody.innerHTML = `<tr><td colspan="5">Carregando...</td></tr>`;
