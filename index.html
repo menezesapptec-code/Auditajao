@@ -427,14 +427,22 @@ tr.editavel:hover td{background:#f4faf6;}
 
   <div id="adminVisaoView">
     <div class="card">
-      <h2>Filtros</h2>
-      <label>Retiro</label>
-      <div id="retiroChecklist" style="margin-bottom:12px;"></div>
+      <h2>Período</h2>
+      <p class="sub">O painel só busca no banco o período escolhido — economiza leituras. Escolha as datas ou use um atalho.</p>
+      <div class="chip-row" style="margin:4px 0 10px;">
+        <button type="button" class="chip" data-periodo="0">Hoje</button>
+        <button type="button" class="chip" data-periodo="1">Ontem</button>
+        <button type="button" class="chip" data-periodo="7">Últimos 7 dias</button>
+        <button type="button" class="chip" data-periodo="30">Últimos 30 dias</button>
+      </div>
       <div class="grid">
         <div><label>De</label><input type="date" id="adminDataDe"></div>
         <div><label>Até</label><input type="date" id="adminDataAte"></div>
       </div>
-      <button class="btn-secondary btn-block" id="btnLimparFiltrosAdmin" style="margin-top:8px;">Limpar filtros</button>
+      <p class="sub" id="adminPeriodoInfo" style="margin-top:8px;font-weight:600;">Nenhum período carregado ainda.</p>
+      <label style="margin-top:8px;">Retiro</label>
+      <div id="retiroChecklist" style="margin-bottom:4px;"></div>
+      <button class="btn-secondary btn-block" id="btnLimparFiltrosAdmin" style="margin-top:8px;">Marcar todos os retiros</button>
     </div>
 
     <div class="card">
@@ -2975,14 +2983,16 @@ function abrirAbaAdmin(aba){
     compiladoModo = "admin";
     const bloco = $("adminCompiladoView");
     if(bloco.parentElement !== $("viewAdmin")) $("adminDestinosView").insertAdjacentElement("afterend", bloco);
-    abrirCompilado();
+    if(!$("compDe").value && !$("compAte").value && adminPeriodo){ $("compDe").value = adminPeriodo.de; $("compAte").value = adminPeriodo.ate; }
+    carregarCompiladoAuditor();
   }
   if(aba==="destinos") abrirAdminDestinos();
 }
 /* ================= ADMIN: DESTINO POR LOTE (carimbo + retiro, por raça) ================= */
 let adDestGrupos = [], adLoteAtual = null;
 function abrirAdminDestinos(){
-  if(!$("adDestData").dataset.init){ $("adDestData").value = hojeLocalISO(); $("adDestData").dataset.init = "1"; }
+  if(!$("adDestData").dataset.init){ $("adDestData").value = adminPeriodo ? adminPeriodo.ate : hojeLocalISO(); $("adDestData").dataset.init = "1"; }
+  if($("adDestData").value){ garantirPeriodoAdmin($("adDestData").value, $("adDestData").value).then(()=>{ preencherRetirosDestinos(); renderAdminDestinos(); }); return; }
   const sel = $("adDestRetiro"), atual = sel.value;
   const retiros = [...new Set(adminAnimaisCache.map(a=>a._retiro).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
   sel.innerHTML = `<option value="">Todos os retiros</option>` + retiros.map(r=>`<option value="${r}">${r}</option>`).join("");
@@ -3012,7 +3022,18 @@ function renderAdminDestinos(){
   $("adDestVazio").classList.toggle("hidden", adDestGrupos.length>0);
   document.querySelectorAll("#adDestTabela tr[data-g]").forEach(tr=> tr.onclick = ()=> abrirAdLote(adDestGrupos[Number(tr.dataset.g)]));
 }
-["adDestData","adDestRetiro"].forEach(id=> $(id).addEventListener("change", renderAdminDestinos));
+$("adDestRetiro").addEventListener("change", renderAdminDestinos);
+$("adDestData").addEventListener("change", async ()=>{
+  const d = $("adDestData").value;
+  if(d) await garantirPeriodoAdmin(d, d);
+  preencherRetirosDestinos(); renderAdminDestinos();
+});
+function preencherRetirosDestinos(){
+  const sel = $("adDestRetiro"), atual = sel.value;
+  const retiros = [...new Set(adminAnimaisCache.map(a=>a._retiro).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  sel.innerHTML = `<option value="">Todos os retiros</option>` + retiros.map(r=>`<option value="${r}">${r}</option>`).join("");
+  if(retiros.includes(atual)) sel.value = atual;
+}
 $("adDestNumero").addEventListener("input", renderAdminDestinos);
 function abrirAdLote(g){
   adLoteAtual = { grupo:g, sel:new Set(contagemPorRaca(g.animais).map(([r])=>r)) };
@@ -3077,9 +3098,8 @@ $("adlSave").onclick = async ()=>{
 let compiladoModo = "admin";
 let compAudAnimais = [], compAudControles = [], compAudFaixa = "";
 function fonteCompilado(){
-  return compiladoModo === "auditor"
-    ? { animais: compAudAnimais, controles: compAudControles }
-    : { animais: adminAnimaisCache, controles: adminControlesCache };
+  // admin e auditor buscam no banco só o período escolhido no próprio Compilado
+  return { animais: compAudAnimais, controles: compAudControles };
 }
 function abrirCompilado(){
   const sel = $("compRetiro"), atual = sel.value;
@@ -3163,7 +3183,7 @@ function renderCompilado(){
 }
 $("compRetiro").addEventListener("change", renderCompilado);
 ["compDe","compAte"].forEach(id=> $(id).addEventListener("change", ()=>{
-  if(compiladoModo === "auditor") carregarCompiladoAuditor(); else renderCompilado();
+  carregarCompiladoAuditor();
 }));
 /* ---- Compilado na tela do auditor ---- */
 async function abrirCompiladoAuditor(){
@@ -3198,6 +3218,7 @@ async function carregarCompiladoAuditor(){
       compAudFaixa = faixa;
     }catch(e){
       console.error(e);
+      compAudFaixa = "";
       $("compKpis").innerHTML = `<p class="pending">Não foi possível carregar${e.code==="resource-exhausted"?" (limite diário do banco)":""}. Tente de novo mais tarde.</p>`;
       return;
     }
@@ -3320,6 +3341,7 @@ $("registroBusca").addEventListener("input", renderRegistro);
 $("btnRegistroMais").onclick = ()=>{ registroLimite += 100; carregarRegistro(false); };
 function renderOrdensAdmin(){
   const wrap = $("ordensLista"); if(!wrap) return;
+  if(!adminPeriodo){ wrap.innerHTML = `<p class="pending">Escolha uma data aqui em cima (ou o período na Visão geral) pra listar as ordens.</p>`; return; }
   const q = ($("ordensBusca").value||"").trim().toLowerCase();
   const fData = $("ordensData").value;
   const qtdPorControle = {};
@@ -3453,7 +3475,11 @@ $("mhSave").onclick = async ()=>{
     alert("Erro ao salvar: " + (e.code==="permission-denied" ? "sem permissão nas regras do Firebase." : (e.message||e)));
   }finally{ $("mhSave").disabled = false; }
 };
-$("ordensData").addEventListener("change", renderOrdensAdmin);
+$("ordensData").addEventListener("change", async ()=>{
+  const d = $("ordensData").value;
+  if(d) await garantirPeriodoAdmin(d, d);
+  renderOrdensAdmin();
+});
 async function excluirOrdemAdmin(c, qtd){
   if(!isAdmin) return;
   if(!navigator.onLine){ alert("Precisa estar online pra excluir."); return; }
@@ -3503,20 +3529,56 @@ Object.keys(ADMIN_ABAS).forEach(k=> $("atab-"+k).onclick = ()=> abrirAbaAdmin(k)
 async function abrirAdmin(){
   showView("viewAdmin");
   $("topTitle").textContent = "Painel Admin";
-  await carregarResumoAdmin();
+  // não busca nada sozinho: espera o admin escolher o período (economiza leituras)
+  adminAnimaisCache = []; adminControlesCache = []; adminPeriodo = null;
+  renderRetiroChecklist([]); aplicarFiltrosAdmin(); atualizarInfoPeriodo();
   iniciarFeedAdmin();
 }
 let adminAnimaisCache = [];
 let adminControlesCache = [];
 let adminRetirosSelecionados = new Set();
 let chartsAdmin = {};
+let adminPeriodo = null; // {de, ate} do que está carregado
+function atualizarInfoPeriodo(msg){
+  const el = $("adminPeriodoInfo"); if(!el) return;
+  if(msg){ el.textContent = msg; return; }
+  el.textContent = adminPeriodo
+    ? `✅ Carregado: ${formatarDataBR(adminPeriodo.de)} a ${formatarDataBR(adminPeriodo.ate)} · ${adminAnimaisCache.length} lançamentos (${adminAnimaisCache.length + adminControlesCache.length} leituras)`
+    : "Nenhum período carregado ainda — escolha as datas acima.";
+}
+function isoMenosDias(n){ const d = new Date(); d.setDate(d.getDate()-n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+document.querySelectorAll("[data-periodo]").forEach(b=> b.onclick = ()=>{
+  const n = Number(b.dataset.periodo);
+  if(n===1){ $("adminDataDe").value = isoMenosDias(1); $("adminDataAte").value = isoMenosDias(1); }
+  else { $("adminDataDe").value = isoMenosDias(n===0?0:n-1); $("adminDataAte").value = hojeLocalISO(); }
+  carregarResumoAdmin();
+});
+/* garante que um dia/período esteja carregado (usado pelas abas Ordens e Destinos) */
+async function garantirPeriodoAdmin(de, ate){
+  if(adminPeriodo && de >= adminPeriodo.de && ate <= adminPeriodo.ate) return;
+  $("adminDataDe").value = de; $("adminDataAte").value = ate;
+  await carregarResumoAdmin();
+}
 async function carregarResumoAdmin(){
+  let de = $("adminDataDe").value, ate = $("adminDataAte").value;
+  if(!de && !ate){ adminPeriodo = null; adminAnimaisCache = []; adminControlesCache = []; renderRetiroChecklist([]); aplicarFiltrosAdmin(); atualizarInfoPeriodo(); return; }
+  if(!de) de = ate; if(!ate) ate = de;
+  if(de > ate){ const t=de; de=ate; ate=t; }
+  $("adminDataDe").value = de; $("adminDataAte").value = ate;
+  atualizarInfoPeriodo(`⏳ Carregando ${formatarDataBR(de)} a ${formatarDataBR(ate)}...`);
   try{
-    const snapAnimais = await db.collection("animais").get();
+    const [snapAnimais, snapControles] = await Promise.all([
+      db.collection("animais").where("data",">=",de).where("data","<=",ate).get(),
+      db.collection("controles").where("data",">=",de).where("data","<=",ate).get()
+    ]);
     adminAnimaisCache = snapAnimais.docs.map(d=>({id:d.id, ...d.data()}));
-    const snapControles = await db.collection("controles").get();
     adminControlesCache = snapControles.docs.map(d=>({id:d.id, ...d.data()}));
-  }catch(e){ console.error(e); adminAnimaisCache = []; adminControlesCache = []; }
+    adminPeriodo = { de, ate };
+  }catch(e){
+    console.error(e); adminAnimaisCache = []; adminControlesCache = []; adminPeriodo = null;
+    atualizarInfoPeriodo("⚠ Não foi possível carregar" + (e.code==="resource-exhausted" ? " (limite diário do banco)." : ".")); 
+    renderRetiroChecklist([]); aplicarFiltrosAdmin(); return;
+  }
 
   // junta o retiro de cada animal a partir do controle que ele pertence (o retiro
   // fica salvo só no controle, não em cada lançamento individual)
@@ -3540,6 +3602,11 @@ async function carregarResumoAdmin(){
   renderRetiroChecklist(retirosUnicos);
 
   aplicarFiltrosAdmin();
+  atualizarInfoPeriodo();
+  // atualiza a aba que estiver aberta
+  if(!$("adminMonitoramentoView").classList.contains("hidden")) renderMonitoramento();
+  if(!$("adminOrdensView").classList.contains("hidden")) renderOrdensAdmin();
+  if(!$("adminDestinosView").classList.contains("hidden")) renderAdminDestinos();
 }
 function renderRetiroChecklist(retiros){
   const wrap = $("retiroChecklist"); wrap.innerHTML = "";
@@ -3588,10 +3655,9 @@ function aplicarFiltrosAdmin(){
   $("aPesoMedioLbl").textContent = pm.n ? `Peso médio (kg) · ${pm.n} pesados` : "Peso médio (kg)";
   desenharGraficosAdmin(lista);
 }
-$("adminDataDe").addEventListener("change", aplicarFiltrosAdmin);
-$("adminDataAte").addEventListener("change", aplicarFiltrosAdmin);
+$("adminDataDe").addEventListener("change", ()=>{ if($("adminDataAte").value) carregarResumoAdmin(); });
+$("adminDataAte").addEventListener("change", ()=>{ if($("adminDataDe").value) carregarResumoAdmin(); });
 $("btnLimparFiltrosAdmin").onclick = ()=>{
-  $("adminDataDe").value=""; $("adminDataAte").value="";
   const retirosUnicos = [...new Set(adminAnimaisCache.map(a=>a._retiro))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
   adminRetirosSelecionados = new Set(retirosUnicos);
   renderRetiroChecklist(retirosUnicos);
