@@ -740,6 +740,25 @@ tr.editavel:hover td{background:#f4faf6;}
   </div>
 </div>
 
+<!-- MODAL: LISTA DE DESCARTES (aba Carimbos) -->
+<div id="modalDescartes" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div class="card" style="max-width:860px;width:100%;max-height:88vh;overflow:auto;">
+    <h2 id="descTitulo">🗑 Animais de descarte</h2>
+    <p class="sub" id="descResumo"></p>
+    <div id="descDestinoBox" class="hidden" style="border:1px solid var(--borda);border-radius:10px;padding:10px;margin-bottom:12px;">
+      <strong>Lançar destino dos descartes marcados</strong>
+      <div class="grid" style="margin-top:6px;">
+        <div><label>Destino</label><select id="descDestino"></select><input id="descDestinoOutro" class="hidden" placeholder="Qual destino?" style="margin-top:6px;"></div>
+        <div id="descDetalheWrap" class="hidden"><label id="descDetalheLbl">Detalhe</label><input id="descDetalhe"></div>
+      </div>
+      <button class="btn-primary btn-block" id="descAplicar" style="margin-top:8px;">Aplicar</button>
+      <p class="sub" style="margin-top:6px;color:#a9382f;">⚠ Depois de lançado, só o administrador altera.</p>
+    </div>
+    <div id="descLista"></div>
+    <button class="btn-secondary btn-block" style="margin-top:12px;" onclick="document.getElementById('modalDescartes').classList.add('hidden')">Fechar</button>
+  </div>
+</div>
+
 <!-- MODAL: ORIGEM / DESTINO DO LOTE DE CARIMBO -->
 <div id="modalLoteCarimbo" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:62;display:flex;align-items:center;justify-content:center;padding:16px;">
   <div class="card" style="max-width:420px;width:100%;">
@@ -748,6 +767,11 @@ tr.editavel:hover td{background:#f4faf6;}
     <label>Raças deste lançamento</label>
     <div id="lcRacas" class="chip-row" style="margin-top:4px;margin-bottom:4px;"></div>
     <p class="sub" id="lcRacasInfo" style="margin-top:4px;">Marque as raças que vão pro mesmo destino. As desmarcadas você lança depois, com outro destino.</p>
+    <details id="lcDescWrap" style="margin:10px 0;border:1px solid #e3b3ae;border-radius:10px;padding:8px 10px;background:#fdf6f5;">
+      <summary style="cursor:pointer;font-weight:700;color:#a9382f;">🗑 Separar animais pro descarte <span id="lcDescResumo" style="font-weight:500;"></span></summary>
+      <p class="sub" style="margin:6px 0;">Toque em "→ Descarte" nos animais que vão pro descarte. Eles saem deste lote e o destino deles é lançado no card 🗑 Descarte.</p>
+      <div id="lcDescLista" style="max-height:240px;overflow:auto;"></div>
+    </details>
     <label style="margin-top:10px;">Destino</label><select id="lcDestino"></select>
     <input id="lcDestinoOutro" class="hidden" placeholder="Qual destino?" style="margin-top:6px;">
     <div id="lcDetalheWrap" class="hidden" style="margin-top:10px;">
@@ -798,6 +822,7 @@ tr.editavel:hover td{background:#f4faf6;}
       <div><label>Categoria</label><select id="erCategoria"></select></div>
       <div><label>Peso (kg) — opcional</label><input type="number" step="0.1" inputmode="decimal" id="erPeso"></div>
       <div><label>Carimbo (@)</label><input type="number" step="0.1" inputmode="decimal" id="erCarimbo"></div>
+      <div><label>Descarte</label><select id="erDescarte"><option value="nao">Não</option><option value="sim">Sim</option></select></div>
       <div class="full"><label>Obs.</label><input id="erObs" placeholder="Opcional"></div>
     </div>
     <div class="btn-row" style="margin-top:14px;">
@@ -865,6 +890,7 @@ tr.editavel:hover td{background:#f4faf6;}
       <div><label>Pasto</label><input id="aePasto"></div>
       <div><label>Peso (kg)</label><input type="number" step="0.1" id="aePeso"></div>
       <div><label>Carimbo (@)</label><input type="number" step="0.1" id="aeCarimbo"></div>
+      <div><label>Descarte</label><select id="aeDescarte"><option value="nao">Não</option><option value="sim">Sim</option></select></div>
       <div class="full"><label>Obs.</label><input id="aeObs"></div>
     </div>
     <div class="btn-row" style="margin-top:14px;">
@@ -1928,7 +1954,67 @@ async function carregarCarimbos(){
   carimbosAnimaisCache = Object.values(porId);
   renderCarimbos();
 }
+/* Aplica alterações em animais: memória, cache do aparelho de cada controle e fila de envio */
+function atualizarAnimaisLocal(animais, dados){
+  const porControle = {};
+  animais.forEach(a=>{
+    Object.assign(a, dados);
+    filaOffline.push({tipo:"updAnimal", id:a.id, dados:{...dados}});
+    if(a.controleId){ (porControle[a.controleId] = porControle[a.controleId] || new Set()).add(a.id); }
+  });
+  Object.keys(porControle).forEach(cid=>{
+    try{
+      const lista = JSON.parse(localStorage.getItem("animais_"+cid) || "[]");
+      lista.forEach(x=>{ if(porControle[cid].has(x.id)) Object.assign(x, dados); });
+      salvarLocal("animais_"+cid, lista);
+    }catch(e){}
+    if(servicoAtual && servicoAtual.id===cid) animaisAtual.forEach(x=>{ if(porControle[cid].has(x.id)) Object.assign(x, dados); });
+  });
+  salvarFilaLocal(); processarFila();
+}
+/* lote de carimbo: descartes ficam fora (o destino deles é lançado no grupo do Descarte) */
+function pendenteDestino(a){ return !a.origemDestinoTravado && !a.descarte; }
 let gruposCarimboAtuais = [];
+let carimbosDescartesAtuais = [];
+function abrirListaDescartes(){
+  const lista = carimbosDescartesAtuais.slice().sort((a,b)=> (a.data||"").localeCompare(b.data||"") || (Number(a.ord)||0)-(Number(b.ord)||0));
+  const fmt = v=> Number(v||0).toLocaleString("pt-BR",{maximumFractionDigits:1});
+  $("descTitulo").textContent = `🗑 Animais de descarte (${lista.length})`;
+  const totalAr = lista.reduce((t,a)=>t+(parseFloat(a.carimbo)||0),0);
+  $("descResumo").textContent = lista.length ? `${resumoRacas(lista)} · Total ${fmt(totalAr)} @` : "";
+  const pend = lista.filter(a=>!a.origemDestinoTravado);
+  descSelecionados = new Set(pend.map(a=>a.id));
+  $("descDestinoBox").classList.toggle("hidden", !pend.length);
+  $("descDestino").innerHTML = `<option value="">Selecione...</option>` + DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
+  $("descDestino").value = ""; $("descDestinoOutro").classList.add("hidden"); $("descDetalheWrap").classList.add("hidden"); $("descDetalhe").value = "";
+  $("descLista").innerHTML = lista.length ? `<div class="table-wrap"><table>
+      <thead><tr><th></th><th>Ord.</th><th>Controle</th><th>Data</th><th>Retiro</th><th>Raça</th><th>Categoria</th><th>@</th><th>Destino</th><th>Obs.</th></tr></thead>
+      <tbody>${lista.map(a=>`<tr><td>${a.origemDestinoTravado?"🔒":`<input type="checkbox" data-desc="${a.id}" checked style="width:auto;">`}</td><td>${a.ord}</td><td>${a.controleNumero||"-"}</td><td>${formatarDataBR(a.data)}</td><td>${retiroDoAnimal(a)||"-"}</td><td>${a.raca||"-"}</td><td>${a.categoria||"-"}</td><td><strong>${fmt(a.carimbo)}</strong></td><td>${destinoComDetalhe(a)||"-"}</td><td>${a.obs||""}</td></tr>`).join("")}</tbody>
+    </table></div>` : `<p class="pending">Nenhum animal marcado como descarte nesse filtro.</p>`;
+  $("descLista").querySelectorAll("[data-desc]").forEach(cb=> cb.onchange = ()=>{ cb.checked ? descSelecionados.add(cb.dataset.desc) : descSelecionados.delete(cb.dataset.desc); atualizarBotaoDesc(); });
+  atualizarBotaoDesc();
+  $("modalDescartes").classList.remove("hidden");
+}
+let descSelecionados = new Set();
+function atualizarBotaoDesc(){ $("descAplicar").textContent = `Aplicar nos ${descSelecionados.size} marcado(s)`; $("descAplicar").disabled = !descSelecionados.size; }
+$("descDestino").addEventListener("change", ()=>{
+  const v = $("descDestino").value;
+  $("descDestinoOutro").classList.toggle("hidden", v!=="Outro");
+  if(v){ const info = infoDetalheDestino(v); $("descDetalheLbl").textContent = info.lbl; $("descDetalhe").placeholder = info.ph; $("descDetalheWrap").classList.remove("hidden"); }
+  else $("descDetalheWrap").classList.add("hidden");
+});
+$("descAplicar").onclick = ()=>{
+  const destino = $("descDestino").value==="Outro" ? $("descDestinoOutro").value.trim() : $("descDestino").value;
+  const destinoDetalhe = $("descDetalhe").value.trim();
+  if(!destino){ alert("Selecione o destino."); return; }
+  if(!destinoDetalhe){ alert(infoDetalheDestino($("descDestino").value).lbl.replace("?","") + " — preencha pra continuar."); return; }
+  const alvo = carimbosDescartesAtuais.filter(a=> descSelecionados.has(a.id) && !a.origemDestinoTravado);
+  if(!alvo.length) return;
+  if(!confirm(`Aplicar "${destino} — ${destinoDetalhe}" em ${alvo.length} descarte(s) (${resumoRacas(alvo)})?\n\nDepois disso só o administrador consegue alterar.`)) return;
+  atualizarAnimaisLocal(alvo, { destino, destinoDetalhe, origemDestinoTravado:true, origemDestinoEm: Date.now() });
+  renderCarimbos(); abrirListaDescartes();
+  toastRapido(`🗑 Destino aplicado em ${alvo.length} descarte(s).`);
+};
 const ORDEM_RACAS_RESUMO = ["Nelore","Cruzado","Anelorado"];
 function contagemPorRaca(anims){
   const m = {};
@@ -1973,7 +2059,7 @@ function renderCarimbos(){
   // agrupa os já lançados por (origem + destino) e diz quais raças foram em cada um
   const lancamentosPorRaca = (anims)=>{
     const m = {};
-    anims.filter(a=>a.origemDestinoTravado).forEach(a=>{
+    anims.filter(a=>a.origemDestinoTravado && !a.descarte).forEach(a=>{
       const k = destinoComDetalhe(a)||"—";
       if(!m[k]) m[k] = { origem:a.origem||"—", destino:destinoComDetalhe(a)||"—", racas:{} };
       const r = a.raca||"Sem raça"; m[k].racas[r] = (m[k].racas[r]||0)+1;
@@ -1981,7 +2067,8 @@ function renderCarimbos(){
     return Object.values(m);
   };
   $("tabelaCarimbos").innerHTML = linhas.map((g,i)=>{
-    const pendAnim = g.animais.filter(a=>!a.origemDestinoTravado);
+    const pendAnim = g.animais.filter(pendenteDestino);
+    const nDesc = g.animais.filter(a=>a.descarte).length;
     const pend = pendAnim.length;
     const travado = pend===0;
     const grupos = lancamentosPorRaca(g.animais);
@@ -1991,7 +2078,7 @@ function renderCarimbos(){
     const destino = grupos.map(gr=> varios ? `<div>${gr.destino} <span class="meta">(${rotRacas(gr)})</span></div>` : gr.destino).join("");
     const extra = (!travado && pend<g.n) ? `<div class="meta" style="color:var(--verde);font-weight:600;">➕ faltam ${pend}: ${resumoRacas(pendAnim)} — toque pra lançar</div>` : "";
     return `<tr data-grupo="${i}" style="cursor:${travado?"default":"pointer"};">
-      <td><strong>${fmt(g.valor)} @</strong></td><td>${g.retiro}</td><td>${g.n} ${g.n===1?"animal":"animais"}<div class="meta">${resumoRacas(g.animais)}</div></td><td>${fmt(g.valor*g.n)}</td>
+      <td><strong>${fmt(g.valor)} @</strong></td><td>${g.retiro}</td><td>${g.n} ${g.n===1?"animal":"animais"}<div class="meta">${resumoRacas(g.animais)}${nDesc?` · <span style="color:#a9382f;">🗑 ${nDesc} descarte</span>`:""}</div></td><td>${fmt(g.valor*g.n)}</td>
       <td>${travado?"🔒 ":""}${destino || (travado?"—":"<span style='color:var(--cinza);'>toque pra lançar</span>")}${extra}</td></tr>`;
   }).join("");
   document.querySelectorAll("#tabelaCarimbos tr[data-grupo]").forEach(tr=>{
@@ -2002,9 +2089,13 @@ function renderCarimbos(){
   $("carimboTotalArrobas").textContent = fmt(lista.reduce((t,a)=> t+(parseFloat(a.carimbo)||0), 0));
   // total por raça (Nelore, Cruzado e qualquer outra que aparecer)
   const porRaca = contagemPorRaca(lista);
-  $("carimboPorRaca").innerHTML = porRaca.length
-    ? `<div class="counters">${porRaca.map(([r,n])=>`<div class="counter-box"><div class="num">${n}</div><div class="lbl">${r}</div></div>`).join("")}</div>`
+  const descartes = lista.filter(a=> a.descarte);
+  carimbosDescartesAtuais = descartes;
+  $("carimboPorRaca").innerHTML = (porRaca.length || descartes.length)
+    ? `<div class="counters">${porRaca.map(([r,n])=>`<div class="counter-box"><div class="num">${n}</div><div class="lbl">${r}</div></div>`).join("")}
+       <div class="counter-box" id="cardDescartes" style="cursor:pointer;border-color:#e3b3ae;background:#fdf1ef;"><div class="num" style="color:#a9382f;">${descartes.length}</div><div class="lbl">🗑 Descarte · ver lista</div></div></div>`
     : "";
+  const cd = $("cardDescartes"); if(cd) cd.onclick = abrirListaDescartes;
 }
 /* Lote de carimbo: aplica Origem + Destino em todos os animais daquele carimbo (no filtro
    atual) que ainda não têm. Depois disso fica travado no painel do auditor — só o admin
@@ -2012,9 +2103,9 @@ function renderCarimbos(){
 let loteCarimboAtual = null;
 function abrirLoteCarimbo(g){
   if(!g) return;
-  const pendentes = g.animais.filter(a=>!a.origemDestinoTravado);
+  const pendentes = g.animais.filter(pendenteDestino);
   const fmt = v=> v.toLocaleString("pt-BR",{maximumFractionDigits:1});
-  if(!pendentes.length){
+  if(!pendentes.length && !g.animais.some(a=>a.descarte && !a.origemDestinoTravado)){
     alert(`🔒 O lote de ${fmt(g.valor)} @ (${g.retiro}) já tem o Destino lançado.\nPra alterar, fale com o administrador.`);
     return;
   }
@@ -2025,7 +2116,27 @@ function abrirLoteCarimbo(g){
   setTimeout(()=>{ const el=$("lcDestino"); if(el) el.focus(); }, 30);
 }
 function pendentesDoLote(){
-  return loteCarimboAtual ? loteCarimboAtual.grupo.animais.filter(a=>!a.origemDestinoTravado) : [];
+  return loteCarimboAtual ? loteCarimboAtual.grupo.animais.filter(pendenteDestino) : [];
+}
+function renderDescarteLote(){
+  if(!loteCarimboAtual) return;
+  const g = loteCarimboAtual.grupo;
+  const lista = g.animais.filter(a=> !a.origemDestinoTravado).slice().sort((a,b)=>(a.raca||"").localeCompare(b.raca||"") || (Number(a.ord)||0)-(Number(b.ord)||0));
+  const nDesc = lista.filter(a=>a.descarte).length;
+  $("lcDescResumo").textContent = nDesc ? `(${nDesc} separado${nDesc>1?"s":""})` : "";
+  $("lcDescLista").innerHTML = lista.map(a=>`<div class="res-row" style="align-items:center;">
+      <span>${a.descarte?"🗑 ":""}Ord. ${a.ord} · ${a.raca||"-"} · ${a.categoria||"-"}${a.controleNumero?` · ctrl ${a.controleNumero}`:""}</span>
+      <button type="button" class="${a.descarte?"btn-secondary":"btn-danger"}" data-id="${a.id}" style="padding:5px 10px;font-size:12px;">${a.descarte?"↩ Voltar pro lote":"→ Descarte"}</button>
+    </div>`).join("") || `<p class="pending">Nenhum animal pendente.</p>`;
+  $("lcDescLista").querySelectorAll("button[data-id]").forEach(b=> b.onclick = ()=>{
+    const a = g.animais.find(x=>x.id===b.dataset.id); if(!a) return;
+    atualizarAnimaisLocal([a], { descarte: !a.descarte });
+    // mantém marcadas só raças que ainda têm animal pendente
+    const racasPend = new Set(pendentesDoLote().map(x=>x.raca||"Sem raça"));
+    if(a.descarte===false) loteCarimboAtual.selecionadas.add(a.raca||"Sem raça");
+    loteCarimboAtual.selecionadas = new Set([...loteCarimboAtual.selecionadas].filter(r=>racasPend.has(r)));
+    renderRacasLote(); renderDescarteLote(); renderCarimbos();
+  });
 }
 function animaisSelecionadosLote(){
   const sel = loteCarimboAtual.selecionadas;
@@ -2045,6 +2156,7 @@ function renderRacasLote(){
   $("lcSub").textContent = `${pend.length} ${pend.length===1?"animal":"animais"} sem destino${fData?` · ${formatarDataBR(fData)}`:" · todas as datas"}`;
   $("lcConfirm").textContent = nSel===pend.length ? `Aplicar ao lote (${nSel})` : `Aplicar às raças marcadas (${nSel})`;
   $("lcConfirm").disabled = nSel===0;
+  renderDescarteLote();
 }
 function prepararFormLote(){
   $("lcDestino").innerHTML = `<option value="">Selecione...</option>` + DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
@@ -2082,24 +2194,7 @@ $("lcConfirm").onclick = ()=>{
   const racasTxt = resumoRacas(alvo);
   if(!confirm(`Aplicar o Destino "${destino} — ${destinoDetalhe}" em ${n} ${n===1?"animal":"animais"} de ${loteCarimboAtual.valor} @ (${racasTxt})?\n\nDepois disso só o administrador consegue alterar.`)) return;
   const dados = { destino, destinoDetalhe, origemDestinoTravado:true, origemDestinoEm: Date.now() };
-  const porControle = {};
-  alvo.forEach(a=>{
-    Object.assign(a, dados);
-    filaOffline.push({tipo:"updAnimal", id:a.id, dados:{...dados}});
-    if(a.controleId){ (porControle[a.controleId] = porControle[a.controleId] || []).push(a.id); }
-  });
-  // atualiza o cache local de cada controle envolvido
-  Object.keys(porControle).forEach(cid=>{
-    try{
-      const lista = JSON.parse(localStorage.getItem("animais_"+cid) || "[]");
-      lista.forEach(x=>{ if(porControle[cid].includes(x.id)) Object.assign(x, dados); });
-      salvarLocal("animais_"+cid, lista);
-    }catch(e){}
-    if(servicoAtual && servicoAtual.id===cid){
-      animaisAtual.forEach(x=>{ if(porControle[cid].includes(x.id)) Object.assign(x, dados); });
-    }
-  });
-  salvarFilaLocal(); processarFila();
+  atualizarAnimaisLocal(alvo, dados);
   renderCarimbos();
   const restantes = pendentesDoLote();
   if(restantes.length){
@@ -2273,7 +2368,7 @@ let wizErr = "";
 
 function novoWizardAnimal(){
   wizIdx = 0;
-  wizData = { raca:"", racaOutro:false, categoria:"", origem:"", destino:"", destinoOutro:false, peso:"", carimbo:"", carimboManual:false, obs:"" };
+  wizData = { raca:"", racaOutro:false, categoria:"", origem:"", destino:"", destinoOutro:false, peso:"", carimbo:"", carimboManual:false, descarte:false, obs:"" };
   wizErr = "";
 }
 $("btnAbrirWizardAnimal").onclick = ()=>{
@@ -2335,7 +2430,7 @@ function renderPainelLateralWiz(){
     const div = document.createElement("div");
     div.className = "hist-item" + (ed ? "" : " lock");
     div.innerHTML = `<div class="t">Ord. ${a.ord} · ${a.carimbo} @ ${ed?"<span style='float:right;color:var(--verde);'>✎</span>":"<span style='float:right;'>🔒</span>"}</div>
-      <div class="m">${a.raca||"-"} · ${a.categoria||"-"}${txtPeso(a)?` · ${txtPeso(a)}`:""}${a.obs?` · ${a.obs}`:""}</div>`;
+      <div class="m">${a.descarte?"<strong style='color:#a9382f;'>🗑 Descarte</strong> · ":""}${a.raca||"-"} · ${a.categoria||"-"}${txtPeso(a)?` · ${txtPeso(a)}`:""}${a.obs?` · ${a.obs}`:""}</div>`;
     div.onclick = ()=> abrirEdicaoRapida(a.id);
     wrap.appendChild(div);
   });
@@ -2375,6 +2470,7 @@ function abrirEdicaoRapida(id){
   $("erPeso").value = parseFloat(a.peso)>0 ? a.peso : "";
   $("erCarimbo").dataset.manual = "";
   $("erObs").value = a.obs||"";
+  $("erDescarte").value = a.descarte ? "sim" : "nao";
   $("modalEdicaoRapida").classList.remove("hidden");
   setTimeout(()=>{ const el=$("erCarimbo"); el.focus(); el.select(); }, 30);
 }
@@ -2390,7 +2486,7 @@ $("erSave").onclick = ()=>{
   const carimbo = parseFloat(String($("erCarimbo").value).replace(",", "."));
   if(!carimbo || carimbo<=0){ alert("Informe um carimbo (@) válido."); return; }
   const pesoER = parseFloat(String($("erPeso").value).replace(",", "."));
-  const dados = { raca:$("erRaca").value, categoria:$("erCategoria").value, carimbo, peso: pesoER>0 ? pesoER : null, obs:$("erObs").value.trim() };
+  const dados = { raca:$("erRaca").value, categoria:$("erCategoria").value, carimbo, peso: pesoER>0 ? pesoER : null, descarte: $("erDescarte").value==="sim", obs:$("erObs").value.trim() };
   Object.assign(a, dados);
   salvarLocal("animais_"+servicoAtual.id, animaisAtual);
   filaOffline.push({tipo:"updAnimal", id:a.id, dados});
@@ -2459,7 +2555,12 @@ function renderWizStep(key){
       <p class="sub" id="carimboAutoInfo" style="margin-top:6px;">Com o peso preenchido, a @ sai sozinha pela tabela de faixas. Dá pra digitar outra por cima.</p>`;
   }
   if(key==="obs"){
-    return `<h2>Observações</h2><p class="sub">Opcional.</p>${errHtml}
+    return `<h2>Descarte?</h2>${errHtml}
+      <div class="opt-grid" id="optDescarte" style="margin-bottom:16px;">
+        <div class="opt-card ${!wizData.descarte?"sel":""}" data-v="nao"><span><span class="opt-num">1</span>Não</span></div>
+        <div class="opt-card ${wizData.descarte?"sel":""}" data-v="sim" style="${wizData.descarte?"border-color:#a9382f;":""}"><span><span class="opt-num">2</span>🗑 Sim, é descarte</span></div>
+      </div>
+      <h2>Observações</h2><p class="sub">Opcional.</p>
       <input id="inObsWiz" placeholder="Alguma observação sobre o animal..." value="${wizData.obs||""}">
       <div class="chip-row" id="obsChips">
         ${OBS_CHIPS.map(c=>`<button type="button" class="chip" data-v="${c}">${c}</button>`).join("")}
@@ -2472,6 +2573,7 @@ function renderWizStep(key){
       {k:"Categoria", v: wizData.categoria||"—", jump:"categoria"},
       {k:"Peso", v: parseFloat(wizData.peso)>0 ? wizData.peso+" kg" : "—", jump:"carimbo"},
       {k:"Carimbo", v: wizData.carimbo?wizData.carimbo+" @":"—", jump:"carimbo"},
+      {k:"Descarte", v: wizData.descarte ? "🗑 Sim" : "Não", jump:"obs"},
       {k:"Obs", v: wizData.obs||"—", jump:"obs"}
     ];
     return `<h2>Revisar</h2><p class="sub">Toque em qualquer linha pra corrigir.</p>${errHtml}
@@ -2541,6 +2643,9 @@ function bindWizStep(key){
     setTimeout(()=>{ const el=$("inPeso"); if(el){ el.focus(); el.select(); } }, 30);
   }
   if(key==="obs"){
+    document.querySelectorAll("#optDescarte .opt-card").forEach(card=>{
+      card.onclick = ()=>{ wizData.descarte = card.dataset.v==="sim"; renderWiz(); };
+    });
     $("inObsWiz").oninput = e=> wizData.obs = e.target.value;
     document.querySelectorAll("#obsChips .chip").forEach(ch=>{
       ch.onclick = ()=>{ $("inObsWiz").value = ch.dataset.v; wizData.obs = ch.dataset.v; };
@@ -2579,6 +2684,9 @@ document.addEventListener("keydown", (e)=>{
       e.preventDefault();
       escolherCategoria(CATEGORIAS_OPCOES[idx]);
       setTimeout(()=>{ const btn=$("btnWizNext"); if(btn && !btn.disabled) btn.click(); }, 0);
+    } else if(step.key === "obs" && (idx===0 || idx===1)){
+      e.preventDefault();
+      wizData.descarte = idx===1; renderWiz();
     } else if(step.key === "destino" && idx < DESTINOS_OPCOES.length){
       e.preventDefault();
       const v = DESTINOS_OPCOES[idx];
@@ -2599,6 +2707,7 @@ function confirmarESalvarAnimal(){
     data: servicoAtual.data, retiro: servicoAtual.retiro||"", tipoAuditoria: tipoAuditoriaAtual, raca: wizData.raca, categoria: wizData.categoria,
     origem: servicoAtual.origem||"", destino: "", pasto: "", carimbo, // origem vem do controle; destino na aba Carimbos
     peso: parseFloat(String(wizData.peso||"").replace(",", "."))>0 ? parseFloat(String(wizData.peso).replace(",", ".")) : null,
+    descarte: !!wizData.descarte,
     obs: (wizData.obs||"").trim(), status:"pendente", loteId:null, conferente1:null, conferente2:null, confAt:null,
     criadoPor: currentUser.uid, criadoPorNome: currentAuditorNome || currentUser.email,
     criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoEmLocal: Date.now()
@@ -2660,7 +2769,7 @@ function renderTabela(){
     tr.innerHTML = `<td>${a.ord}</td><td>${a.raca}</td><td>${a.categoria||"-"}</td><td>${a.origem||"-"}</td>
       <td>${a.destino?`<span class="badge ${cls}">${destinoComDetalhe(a)}</span>`:"-"}</td><td>${a.pasto||"-"}</td><td>${a.carimbo}</td>
       <td><span class="badge ${a.status}">${a.status==="pendente"?"Pendente":"Solto"}</span></td>
-      <td>${a.obs||""}</td>
+      <td>${a.descarte?"<strong style='color:#a9382f;'>🗑 Descarte</strong> ":""}${a.obs||""}</td>
       <td class="row-actions">${animalEditavel(a)?`<span style="color:var(--verde);margin-right:8px;">✎</span>`:(a.origemDestinoTravado||a.status!=="pendente")?"🔒":""}${a.status==="pendente"&&!a.origemDestinoTravado?`<button class="btn-danger" data-id="${a.id}">✕</button>`:""}</td>`;
     const btn = tr.querySelector("button");
     if(btn) btn.onclick = (ev)=>{ ev.stopPropagation(); excluirAnimal(a.id); };
@@ -2713,9 +2822,9 @@ $("btnExportExcel").onclick = ()=>{
     ["Total Animais", $("cTotal").textContent], ["Total @ (Carimbo)", $("cArrobas").textContent],
     ["Animais/Hora", $("cAnimaisHora").textContent], ["Confinamento", $("cConf").textContent],
     ["Recria", $("cRecria").textContent], ["Refugo", $("cRefugo").textContent], ["Outros", $("cOutro").textContent],
-    [], ["ORD.","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","CARIMBO (@)","STATUS","OBS."]
+    [], ["ORD.","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","CARIMBO (@)","DESCARTE","STATUS","OBS."]
   ];
-  animaisAtual.forEach(a=> cab.push([a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,a.status,a.obs]));
+  animaisAtual.forEach(a=> cab.push([a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,a.descarte?"Sim":"",a.status,a.obs]));
   const ws = XLSX.utils.aoa_to_sheet(cab);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Controle");
   XLSX.writeFile(wb, nomeArquivo("xlsx"));
@@ -3874,8 +3983,8 @@ function descricaoLocalLancamento(a){
 }
 $("btnAdminExportExcel").onclick = ()=>{
   const lista = listaOrdenadaComIndiceGeral();
-  const cab = [["Nº GERAL","DATA","CONTROLE","TIPO","ORD. (DO DIA)","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","CARIMBO (@)","LOCAL","STATUS","AUDITOR","OBS."]];
-  lista.forEach(a=> cab.push([a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,descricaoLocalLancamento(a),a.status,a.criadoPorNome,a.obs]));
+  const cab = [["Nº GERAL","DATA","CONTROLE","TIPO","ORD. (DO DIA)","RAÇA","CATEGORIA","ORIGEM","DESTINO","PASTO","CARIMBO (@)","DESCARTE","LOCAL","STATUS","AUDITOR","OBS."]];
+  lista.forEach(a=> cab.push([a.indiceGeral,a.data||"",a.controleNumero,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.ord,a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,a.descarte?"Sim":"",descricaoLocalLancamento(a),a.status,a.criadoPorNome,a.obs]));
   const ws = XLSX.utils.aoa_to_sheet(cab); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Todos"); XLSX.writeFile(wb, "Controle_Servico_Geral.xlsx");
 };
@@ -4207,8 +4316,8 @@ async function gerarRelatorioPDFCompleto(lista, opts){
   doc.setFontSize(14); doc.setTextColor(0,0,0); doc.setFont(undefined,"bold");
   doc.text(opts.titulo, 14, 15);
   doc.setFont(undefined,"normal");
-  doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Ord.","Tipo","Raça","Categoria","Origem","Destino","Pasto","@","Local","Status","Auditor","Obs."]],
-    body: lista.map(a=>[a.indiceGeral,formatarDataBR(a.data),a.controleNumero,a.ord,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome||"",a.obs||""]), styles:{fontSize:6.5} });
+  doc.autoTable({ startY:22, head:[["Nº Geral","Data","Controle","Ord.","Tipo","Raça","Categoria","Origem","Destino","Pasto","@","Desc.","Local","Status","Auditor","Obs."]],
+    body: lista.map(a=>[a.indiceGeral,formatarDataBR(a.data),a.controleNumero,a.ord,(ROTULO_TIPO_AUDITORIA[a.tipoAuditoria||"curral"]||"").replace(/^\S+\s/,""),a.raca,a.categoria||"",a.origem||"",destinoComDetalhe(a),a.pasto||"",a.carimbo,a.descarte?"Sim":"",descricaoLocalLancamento(a),a.status==="pendente"?"Pendente":"Solto",a.criadoPorNome||"",a.obs||""]), styles:{fontSize:6.5} });
   doc.save(opts.arquivo);
 }
 
@@ -4236,16 +4345,17 @@ function abrirAdminEdit(a){
   $("aeDestino").innerHTML = DESTINOS_OPCOES.map(d=>`<option value="${d}">${d}</option>`).join("");
   $("aeDestino").value=a.destino;
   $("aePeso").value = parseFloat(a.peso)>0 ? a.peso : "";
+  $("aeDescarte").value = a.descarte ? "sim" : "nao";
   $("aeCarimbo").value=a.carimbo; $("aeObs").value=a.obs||""; $("aePasto").value=a.pasto||""; $("aeDestinoDetalhe").value=a.destinoDetalhe||"";
   $("modalAdminEdit").classList.remove("hidden");
 }
 $("aeCancel").onclick = ()=> $("modalAdminEdit").classList.add("hidden");
 $("aeSave").onclick = async ()=>{
   if(!animalEditandoAdmin) return;
-  const dados = { raca:$("aeRaca").value, categoria:$("aeCategoria").value, origem:$("aeOrigem").value.trim(), destino:$("aeDestino").value, pasto:$("aePasto").value.trim(), destinoDetalhe:$("aeDestinoDetalhe").value.trim(), carimbo:parseFloat($("aeCarimbo").value)||0, peso: parseFloat($("aePeso").value)>0 ? parseFloat($("aePeso").value) : null, obs:$("aeObs").value.trim() };
+  const dados = { raca:$("aeRaca").value, categoria:$("aeCategoria").value, origem:$("aeOrigem").value.trim(), destino:$("aeDestino").value, pasto:$("aePasto").value.trim(), destinoDetalhe:$("aeDestinoDetalhe").value.trim(), carimbo:parseFloat($("aeCarimbo").value)||0, peso: parseFloat($("aePeso").value)>0 ? parseFloat($("aePeso").value) : null, descarte: $("aeDescarte").value==="sim", obs:$("aeObs").value.trim() };
   try{
     await db.collection("animais").doc(animalEditandoAdmin.id).update(dados);
-    const antes = animalEditandoAdmin, rot = {peso:"Peso",raca:"Raça",categoria:"Categoria",origem:"Origem",destino:"Destino",pasto:"Pasto",destinoDetalhe:"Curral/pasto destino",carimbo:"Carimbo",obs:"Obs"};
+    const antes = animalEditandoAdmin, rot = {descarte:"Descarte",peso:"Peso",raca:"Raça",categoria:"Categoria",origem:"Origem",destino:"Destino",pasto:"Pasto",destinoDetalhe:"Curral/pasto destino",carimbo:"Carimbo",obs:"Obs"};
     const mudancas = Object.keys(dados).filter(k=> String(antes[k]??"") !== String(dados[k]??"")).map(k=>`${rot[k]||k}: "${antes[k]??""}" → "${dados[k]}"`);
     registrarLog("Lançamento editado", `Controle ${antes.controleNumero||"-"} · Ord. ${antes.ord} · ${formatarDataBR(antes.data)}\n` + (mudancas.join("\n") || "(sem mudança)"));
     $("modalAdminEdit").classList.add("hidden");
